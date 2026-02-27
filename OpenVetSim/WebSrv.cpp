@@ -100,7 +100,9 @@ findPhpPath(void)
 		fs::path bundled("./PHP8.0");
 		if (hasExe(bundled, phpExe))
 		{
-			sprintf_s(phpPath, sizeof(phpPath), "%s", bundled.string().c_str());
+			// Use the absolute path so the launch command still works after
+			// cd-ing to html_path (which may be a different directory).
+			sprintf_s(phpPath, sizeof(phpPath), "%s", fs::absolute(bundled).string().c_str());
 			return 1;
 		}
 	}

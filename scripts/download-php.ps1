@@ -8,6 +8,10 @@
 # Uses pre-built static binaries from the static-php-cli project CDN:
 #   https://dl.static-php.dev/static-php-cli/common/
 #
+# NOTE: The CDN redirects through DigitalOcean Spaces, which is blocked on
+# some university/corporate networks. Run this script from a home network,
+# phone hotspot, or VPN if you are on campus.
+#
 # These binaries have no external library dependencies — they work on any
 # Windows installation without any additional runtime or package manager.
 #
