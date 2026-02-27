@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+  <head>
+		<meta charset="UTF-8">
+		<meta name="google" content="notranslate">
+		<meta http-equiv="Content-Language" content="en">
+ 
+ <!--
+sim-ii: Copyright (C) 2019  VetSim, Cornell University College of Veterinary Medicine Ithaca, NY
+
+See gpl.html -->
+		<title>OBS Control</title>
+		<script type="text/javascript" src="scripts/jquery/2.2.1/jquery.min.js"></script>
+		<script type="text/javascript" src="scripts/obs-websocket.js"></script>
+		
+<script>
+function GetURLParameter(sParam)
+{
+    var sPageURL = window.location.search.substring(1);
+    var sURLVariables = sPageURL.split('&');
+    for (var i = 0; i < sURLVariables.length; i++) 
+    {
+        var sParameterName = sURLVariables[i].split('=');
+        if (sParameterName[0] == sParam) 
+        {
+            return sParameterName[1];
+        }
+    }
+};
+
+//const OBSWebSocket = require('obs-websocket-js');
+
+const obs = new OBSWebSocket();
+
+$(document).ready(function() {
+	var cmd = GetURLParameter('command');
+	
+	$("#cmd").append("command is "+cmd );
+
+	obs.connect().then(
+		function (){		
+			$("#reply").append("ConnectOK\n " );	
+			if ( cmd == 'start' )
+			{
+				obs.send('StartRecording').then(
+					function(){$("#reply").append("Sent Start\n " );},
+					function(result){$("#reply").append("Start Failed\n " ); console.log(result);} );
+			}
+			else if ( cmd == 'stop' )
+			{
+				obs.send('StopRecording').then(
+					function(){$("#reply").append("Sent Stop\n " );},
+					function(result){$("#reply").append("Stop Failed\n " ); console.log(result);} );
+			}
+			obs.disconnect();
+		},
+		function (result){
+			$("#reply").append("ConnectFailed\n " );
+			console.log(result);
+		})
+	.catch()
+	{
+		//$("#reply").append("Connect Error\n " );
+	};
+
+});
+
+</script>
+
+	</head>
+	<body>
+		<p>OBS Control</p>
+		<p id='cmd'></p>
+		<pre id='reply'></pre>
+	</body>
+</html>

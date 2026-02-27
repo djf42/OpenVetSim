@@ -1,0 +1,307 @@
+/*
+sim-ii: Copyright (C) 2019  VetSim, Cornell University College of Veterinary Medicine Ithaca, NY
+
+See gpl.html
+*/
+	#modal {
+		position: absolute;
+		top: -20px;
+		bottom: -20px;
+		left: 0;
+		right: 0;
+		background-color: rgba(117, 117, 117, 0.6);
+		display: none;
+		z-index: 200;
+	}
+		
+		#modal .container {
+			position: relative;
+			margin: auto;
+			width: 400px;
+			top: 200px;
+			height: 200px;
+			left: 0;
+			right: 0;
+			background-color: #ffffff;			
+			border: 5px solid #B31B1B;
+			text-align: center;
+			border-radius: 10px;
+			padding: 10px;
+		}
+		
+	#modal-content {
+		margin-top: 30px;
+		position: relative;
+	}
+		#modal-title {
+			position: absolute;
+			font-size: 20px;
+			top: -34px;
+			left: 0px;
+		}
+		
+	select.modal-select {
+		margin-top: 5px;
+	}
+		
+	hr.modal-divider {
+		
+	}
+	
+	.modal-section-title {
+		margin: 10px 0 0px 0;
+	}
+		.modal-section-title.pulse-strength-label {
+			float: left;
+			margin: 8px 0 0 30px;
+		}
+			.modal-section-title.pulse-strength-label:nth-child(1) {
+				margin-left: 43px;
+			}
+		
+	input[name=pulse-strength] {
+		float: left;
+		margin: 0px 0 0 53px;
+	}
+	
+	.control-modal-div {
+		margin: 0 auto;
+		height: 45px;
+		width: 345px;
+	}
+		.control-modal-div .sub-control {
+			float: left;
+			width: 50%;
+			margin-bottom: 20px;
+		}
+		.control-modal-div.pulse-strength {
+			width: 315px;
+		}
+		.control-modal-div.heart-rhythm {
+			float: left;
+			height: 70px;
+		}
+			.control-modal-div.heart-rhythm.ecg {
+				width: 200px;
+			}
+			.control-modal-div.heart-rhythm.pulses {
+				width: 125px;
+			}
+			.control-modal-div.heart-rhythm.frequency {
+				width: 125px;
+			}
+			.control-modal-div.heart-rhythm.amplitude {
+				width: 125px;
+			}
+			.control-modal-div.heart-rhythm.pea {
+				width: 50px;
+				margin: 0;
+			}
+			.control-modal-div.heart-rhythm.pea input {
+				margin-top: 8px;
+			}
+	
+	.modal-input-label {
+		clear: both;
+		float: left;
+		margin: 0 0 0 35px;
+	}
+		.modal-input-label.new-value {
+			clear: none;
+			margin: 0 0 0 187px;
+		}
+	
+	.control-incr-decr-rate {
+		margin: 0 5px 0 5px;
+		font-size: 20px;
+		clear: both;
+		float: left;
+	}
+		.incr-rate {
+			margin: 0 0 0 5px;
+			clear: none;
+		}
+		
+	
+	.control-slider-1 {
+		width: 150px;
+		float: left;
+		margin: 3px 0px 0 0;
+	}
+	
+	.strip-value {
+		width: 50px;
+		text-align: center;
+		float: left;
+		margin: 0 0px 0 0;
+	}
+		.strip-value.new {
+			margin: 0 0px 0 10px;
+		}
+		
+	.modal-button {
+		margin: 10px 30px 0 20px;
+	}
+	.modal-button.cancel {
+		margin-left: 40px;
+	}
+	
+	/* vocal */
+	#vocal-list {
+		margin: 0;
+	}
+		#vocal-list li{
+			margin: 0 0 0px 0;
+			height: 20px;
+		}
+		#vocal-list img.vocal-list-image{
+			margin: 0 10px 0 0;
+			float: left;
+			clear: both;
+		}
+		#vocal-list .vocal-list-name{
+			margin: 0;
+			float: left;
+			color: #666666;
+		}
+			#vocal-list .vocal-list-name.selected{
+				font-weight: bold;
+				background-color: gray;
+				color: #FFFFFF;
+			}
+			
+		#audio-control-repeat img {
+			background-color: red;
+		}
+			#audio-control-repeat img.selected {
+				background-color: green;
+			}
+		
+		.control-modal-div a.audio-control {
+			margin-right: 20px;
+			float: left;
+		}
+			.control-modal-div a.audio-control img {
+				width: 30px;
+			}
+
+		#modal .container a.close_modal {
+			position: absolute;
+			top: -2px;
+			right: -2px;
+		}
+		
+	#volume-controls {
+		float: left;
+		width: 180px;
+	}
+		#volume-controls #mute-volume-title{
+			float: left;
+			margin: -3px 1px 0 0;
+		}
+		#volume-controls #volume-title{
+			float: left;
+			margin: -3px 0 0 45px;
+		}
+			#volume-title.sensitivity {
+				margin-left: 30px;
+			}
+		#volume-controls input{
+			float: left;
+			margin: 4px 0px 0 6px;
+		}
+	
+	#volume-slider {
+		width: 125px;
+		float: left;
+		margin: 5px 0 0 23px;
+	}
+	
+	#sensitivity-comment {
+		float: left;
+		width: 300px;
+		margin: 5px 0 5px -52px;
+	}
+	
+	/* user table */
+	#scenario-add {
+		float: left;
+	}
+	#scenario-select {
+		float: left;
+		clear: both;
+		margin: 10px 0 0px 10px;
+	}
+	
+	#user-table{
+		width: 850px;
+	}
+		#user-table.scenario{
+			border-collapse: collapse;
+			margin-top: 20px;
+		}
+	#user-table td.col-50{
+		width: 50px;
+	}
+		#user-table.scenario td{
+			border: 1px solid gray;
+			padding: 0 5px 0 5px;
+		}
+		#user-table.scenario td.scenario{
+			text-align: left;
+			padding: 0 5px 0 5px;
+		}
+		#user-table.scenario td.user-header{
+			border: none;
+		}
+	#user-table td.col-100{
+		width: 100px;
+	}
+	#user-table td.col-150{
+		width: 150px;
+	}
+	#user-table td.col-200{
+		width: 200px;
+	}
+	#user-table td.col-250{
+		width: 250px;
+	}
+	#user-table td.col-300{
+		width: 300px;
+	}
+	#user-table td.user-header {
+		font-weight: bold;
+		vertical-align: bottom;
+	}
+	#user-table td input {
+		padding: 0 5px 0 5px;
+		width: 93%;
+		border: 1px solid gray;
+	}
+		#user-table td input.error {
+			border: 2px solid #B31B1B;
+		}
+	#user-table-title {
+		font-size: 20px;
+	}
+	
+	/* slider */
+	#volume-slider, .control-slider-1 {
+		background-color: #B31B1B;
+		border-radius: 5px;
+		margin: 10px 0 0 25px;
+		height: 15px;
+	}
+	.control-slider-1 {
+		width: 150px;
+		margin: 1px 0 0 7px;
+	}
+	
+	.ui-slider .ui-slider-handle {
+		margin-top: -2px;
+		width: 25px;
+		height: 25px;
+		border: 1px solid black;
+	}
+
+		

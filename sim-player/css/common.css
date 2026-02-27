@@ -1,0 +1,341 @@
+/*
+sim-player: Copyright (C) 2019  VetSim, Cornell University College of Veterinary Medicine Ithaca, NY
+
+See gpl.html
+*/
+	
+@import url("./whitespace-reset.css");
+
+body { 
+	font: Arial, serif;
+	font-family: Arial, serif; 
+	font-size: 13px;
+	line-height: 18px;
+	color: #666666;
+	margin: 0;
+	padding: 0;
+	position: relative;
+	background-color: #FFFFFF;
+	}
+	
+a, a:visited {
+	color: #72c7bc;
+	text-decoration: none;
+	outline: none;
+	}
+a:hover { 
+	text-decoration: none;
+	outline: none;
+}
+
+/* Common assets */
+#sitewrapper { 
+	padding: 0 20px 30px 20px;
+	margin: -10px auto 0px;
+	width: 1180px;
+	position: relative;
+}
+	
+	#admin_header {
+		width: 100%;
+		background-color: #FFFFFF;
+		height: 76px;
+		margin: 15px 0 50px 0;
+	}
+	#admin_header img {
+		clear: both;
+		float: left;
+	}
+	
+	#admin_header h1 {
+		color: #B31B1B;
+		font-size: 21px;
+		font-family: Georgia;
+		clear: none;
+		float: left;
+		margin: 59px 0 0 130px;
+	}
+		#admin_header h1.dev-warning {
+			color: red;
+			margin: 0 0 10px 50px;
+			font-size: 24px;
+			clear: none;
+		}
+
+	
+	#admin_header ul {
+		clear: both;
+		float: left;
+		margin-top: 20px;
+	}
+		#admin_header ul li{
+			float: left;
+			margin-right: 25px;
+			text-transform: uppercase;
+			font-size: 15px;
+			color: #666666;
+		}
+			#admin_header ul li.selected a{
+				color: #74c7bd;
+			}
+			#admin_header ul li.admin_logout{
+				margin-left: 50px;
+				text-transform: none;
+				font-size: 16px;
+				font-style: italic;
+			}
+			#admin_header ul li a{
+				color: #000;
+			}
+	
+		#admin_login form fieldset {
+			border: none;
+		}
+			#admin_login form label {
+				font-style: italic;
+				margin-right: 10px;
+			}
+			#admin_login form input {
+				padding: 4px;
+				width: 200px;
+				margin-right: 20px;
+				margin-bottom: 20px;
+			}
+			#admin_login form input[type=submit]{
+				margin: 0;
+				width: 70px;
+				padding: 0;
+				height: 40px;
+				width: 100px;
+				font-size: 18px;
+			}
+			
+	/* Main nav */
+	#admin-nav {
+		width: 1000px;
+		height: 50px;
+		background-color: #B31B1B;
+		color: #FFFFFF;
+		margin: 20px 0 10px 10px;
+		padding: 5px 0 5px 10px;
+		clear: both;
+		float: left;
+		position: relative;
+	}
+		#admin-nav h1 {
+			clear: both;
+			float: left;
+			margin-right: 40px;
+		}
+		#admin-nav div.profile-display {
+			font-weight: bold;
+			float: left;
+			width: 250px;
+		}
+			#admin-nav div.profile-display.scenario {
+				width: 500px;
+			}
+				#admin-nav div.profile-display.scenario img {
+					width: 24px;
+					margin: 0 0 -10px 5px;
+				}
+		#admin-nav h1.welcome-title {
+			float: right;
+			clear: none;
+			margin-right: 30px;
+		}
+		
+	ul#main-nav {
+		display: block;
+		clear: both;
+		float: left;
+		margin: 10px 0 0 0;
+		width: 100%;
+		position: relative;
+	}
+		ul#main-nav li {
+			float: left;
+			position: relative;
+			margin-right: 30px;
+			color: #FFFFFF;
+		}
+		ul#main-nav li.logout {
+			float: right;
+			color: #FFFFFF;
+		}
+			ul#main-nav li > a {
+				color: #aaaaaa;
+			}
+				ul#main-nav li > a:hover {
+					color: #FFF;
+				}
+
+	ul.sub-nav {
+		display: none;
+		width: 100%;
+		position: absolute;
+		top: 17px;
+		width: 225px;
+		left: -13px;
+		z-index: 200;
+	}
+		ul.sub-nav li {
+			margin: 0 0 0 3px;
+			clear: both;
+			float: left;
+			width: 115px;
+			height: 20px;
+			background-color: #B31B1B;
+			padding: 5px 15px 5px 10px;
+		}
+			ul.sub-nav li > a{
+				color: #FFFFFF;
+			}
+
+			ul#main-nav ul.sub-nav li > a:hover{
+				color: #FFF;
+			}
+			
+	ul#main-nav li a.event-link {
+		margin: 0;
+		color: #AAAAAA;
+	}
+		ul#main-nav li a.event-link:hover {
+			color: #FFF;
+		}
+
+	/* event log */
+	#event-log {
+		width: 600px;
+		color: #000000;
+		margin: 20px 0 10px 10px;
+		padding: 5px 0 5px 10px;
+		clear: both;
+		float: left;
+		position: relative;	
+	}
+		#event-log table {
+			border-collapse: collapse;
+		}
+			#event-log tr.event-content-row:hover {
+				cursor: pointer;
+				background-color: #99FF99;
+			}
+			#event-log tr.selected {
+				background-color: #66CCFF;
+			}
+			#event-log td.event-content {
+				border: 1px solid black;
+				padding: 0 5px 0 5px;
+			}
+			#event-log td.event-header {
+				font-weight: bold
+			}
+				#event-log td.event-header.time {
+					width: 85px;
+				}
+		
+	.align-center {
+		text-align: center;
+	}
+	
+	p.error_login {
+		display: none;
+		color: #B31B1B;
+		margin-top: 20px;
+		font-size: 16px;
+	}
+
+	.float_left, .float-left {
+		float: left;
+	}
+	
+	.float-right {
+		float: right;
+	}
+	
+	.clear-none {
+		clear: none;
+	}
+			
+	.full_width {
+		width: 100%;
+	}
+	
+	.clearer {
+		clear: both;
+	}	
+	
+	
+.bold {
+	font-weight: bold;
+}
+
+.red-button {
+	border-radius: 5px;
+	background-color: #B31B1B;
+	border: 1px solid #B31B1B;
+	color: #FFFFFF;
+	font-family:Arial;
+	letter-spacing: 1px;
+	cursor: pointer;
+}
+
+#play-test {
+	margin: 10px 0 0 40px;
+	display: block;
+}
+
+#player-event-list {
+	width: 800px;
+}
+
+tr.settings-class, p.settings-class {
+	background-color: #FFFFCC;
+}
+
+tr.simulator-class, p.simulator-class {
+	background-color: #E6E6FF;
+}
+
+tr.comment-class, p.comment-class {
+	background-color: #CCFFCC;
+}
+
+tr.et-class, p.et-class {
+	background-color: #FFCCD5;
+}
+
+tr.cpr-class, p.cpr-class {
+	background-color: #ffdb99;
+}
+
+.log-filter p, .log-filter input{
+	float: left;
+}
+
+.log-filter {
+	margin-bottom: 40px;
+}
+
+.log-filter .legend {
+	height: 20px;
+	width: 20px;
+	border: 1px solid black;
+	margin-right: 10px;
+	padding: 2px;
+	font-size: 24px;
+}
+.log-filter .legend:hover {
+	cursor: pointer;
+}
+
+.log-filter p.legend-label {
+	margin: 3px 40px 0 0px;
+	font-size: 18px;
+}
+
+
+
+		
+

@@ -1,0 +1,309 @@
+/*
+sim-ii: Copyright (C) 2019  VetSim, Cornell University College of Veterinary Medicine Ithaca, NY
+
+See gpl.html
+*/
+	#vocals-dog-control {
+		top: 45px;
+		left: 405px;
+	}	
+	#pulse-dog-control {
+		top: 160px;
+		left: 135px;
+	}	
+	#chest-dog-control {
+		top: 200px;
+		left: 300px;
+	}	
+	#left-lung-dog-control {
+		top: 110px;
+		left: 355px;
+	}	
+	#right-lung-dog-control {
+		top: 110px;
+		left: 265px;
+	}
+	#heart-sound-dog-control {
+		top: 155px;
+		left: 300px;
+	}
+	
+.dog-control {
+	position: absolute;
+	text-align: center;
+}
+
+.sound-mute {
+	display: none;
+}	
+
+	
+	.dog-control a, .dog-control a:visited{
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+	.dog-control a img{
+		margin: -3px 0 -3px -5px;
+	}
+
+	#vs-left-col {
+		width: 500px;
+		position: relative;
+		float: left;
+		height: 250px;
+	}
+	
+	#vs-right-col {
+		position: relative;
+		float: left;
+		margin: 10px 0 0 0px;
+	}
+	
+		.vs-controls {
+			margin: 0px 0 10px 0;
+			width: 70px;
+		}
+			.vs-controls .display-rate {
+				font-size: 50px;
+				float: left;
+				margin: 0;
+				width: 150px;
+			}
+				#vs-heartRhythm {
+					color: green;
+					margin-bottom: 57px;
+					height: 30px;
+				}
+				#vs-awRR {
+					color: white;
+				}
+				
+				.strip-label {
+					font-size: 24px;
+				}
+				
+.alt-control {
+	float: left;
+	margin: 0px 0px 10px 10px;
+	text-align: left;
+	width: 110px;
+}
+	.alt-control a.alt-control-title {
+		font-size: 18px;
+		margin-bottom: 5px;
+	}
+	.alt-control a {
+		clear: both;
+		float: left;
+		margin: 10px 5px 0 0;
+	}
+	.alt-control p, .alt-control a{
+		float: left;
+		font-size: 35px;
+	}
+		.alt-control.with-sub p, .alt-control.with-sub a {
+			margin-bottom: -2px;
+		}
+		.alt-control.control-Tperi {
+			width: 167px;
+			margin-right: 0px;
+		}
+			 #display-Tperi .vs-lower-label {
+				font-size: 20px;
+			}
+		
+		
+		.alt-control.control-Tperi #clock {
+			float: left;
+			clear: both;
+			margin-top: 20px;
+			color: white;
+			font-size: 25px;
+			border: 1px solid white;
+			padding: 6px;
+		}
+		.alt-control.awRR {
+			width: 140px;
+			position: absolute;
+			top: 220px;
+			right: 8px;
+		}
+		.alt-control.SpO2 {
+			width: 120px;
+			position: absolute;
+			top: 290px;
+			right: 29px;
+		}
+		
+		#nibp-read-in-progress {
+			color: red;
+			font-size: 22px;
+			position: absolute;
+			top: -1px;
+			right: 40px;
+		}
+		
+.wide-col {
+	margin: 0px 0 10px 0;
+	float: left;
+	width: 100%;
+}
+	.wide-col.buttons {
+		margin-top: 20px;
+	}
+	div.nbp {
+		width: 50px;
+	}
+		
+button.nvs-button {
+	height: 30px;
+	border-radius: 5px;
+	cursor: pointer;
+	width: 155px;
+	padding: 3px 0 8px 0;
+	position: absolute;
+}
+
+#button-nbp {
+	width: 90px;
+	position: absolute;
+	bottom: 0;
+	right: 50px;
+}
+	#vs-nbp {
+		margin: 10px 0 0 0;
+		width: 320px;
+		position: relative;
+	}
+		#vs-nbp a.alt-control-title {
+			margin: 0px 0 0px 0;
+		}
+		#vs-nbp a.alt-control-rate {
+			font-size: 35px;
+			width: 320px;
+			float: left;
+			margin: 15px 0 0 0;
+		}
+			#vs-nbp a.alt-control-rate#display-nbp-hr {
+				margin-top: 15px;
+			}
+			#vs-nbp a.alt-control-rate #displayed-diastolic {
+				margin-right: -10px;
+			}
+			#vs-nbp a.alt-control-rate.nbip {
+				width: 355px;
+			}
+		
+	#nbp-control-coupled-title {
+		margin: 14px 0 0 130px;
+		float: left;
+	}
+	#nbp-control-coupled-title-hr {
+		margin: 14px 0 0 90px;
+		float: left;
+	}
+	#nbp-control-coupled, #nbp-control-coupled-hr {
+		margin: 16px 0 0 10px;
+		float: left;
+	}
+	
+/* nvs icons */
+	img.nvs-button {
+		width: 50px;
+		position: absolute;
+		cursor: pointer;
+	}
+		img.nvs-button.tele-sim {
+			width: 40px;
+		}
+	h2.nvs-button {
+		position: absolute;
+		font-size: 14px;
+		color: #000000;
+	}
+	
+	h2#indicator-pea {
+		color: red;
+		position: absolute;
+		bottom: 10px;
+		left: 200px;
+		display: none;
+		font-size: 20px;
+	}
+	h2#indicator-arrest {
+		color: red;
+		position: absolute;
+		bottom: 10px;
+		left: 300px;
+		display: none;
+		font-size: 20px;
+	}
+		
+.color-white {
+	color: #FFFFFF;
+}
+.color-green {
+	color: green;
+}
+.color-yellow {
+	color: yellow;
+}
+.color-red {
+	color: red;
+}
+.color-blue {
+	color: #0066FF;
+}
+
+.vs-upper-label {
+	font-size: 20px;
+}
+.vs-lower-label {
+	font-size: 26px;
+}
+.nbip-label {
+	font-size: 20px;
+	margin-left: -10px;
+}
+
+/* telesim controls */
+select.telesim-select {
+	float: left;
+}
+
+img.telesim-repeat {
+	float: right;
+	background-color: #B3FFB3;
+	height: 20px;
+	margin-right: 5px;
+	cursor: pointer;
+}
+
+	img.telesim-repeat.active {
+		background-color: #FFB3B3;
+	}
+	
+#telesim-size {
+	position: absolute;
+	top: 1px;
+	right: 25px;
+	color: white;
+	height: 19px;
+	width: 19px;
+	text-align: center;
+	border-radius: 20px;
+	cursor: pointer;
+	font-size: 20px;
+	font-weight: bold;
+}
+
+	#telesim-size.expand {
+		background-color: green;
+		line-height: 20px;
+	}
+	#telesim-size.reduce {
+		background-color: red;
+		line-height: 17px;
+	}
+
+

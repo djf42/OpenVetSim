@@ -1,0 +1,211 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<scenario>
+    <header>
+        <author>David Weiner</author>
+        <title>
+            <name>Healthy Dog Scenario</name>
+            <top>5</top>
+            <left>10</left>
+        </title>
+        <date_of_creation>2016-06-06</date_of_creation>
+        <description>This is the default scenario.</description>
+    </header>
+    <profile>
+        <avatar>
+            <filename>stock-dog.jpg</filename>
+            <height_pct>100</height_pct>
+            <width_pct>50</width_pct>
+        </avatar>
+        <summary>
+            <description>Example of a healthy dog.</description>
+            <breed>Labrador</breed>
+            <sex></sex>
+            <weight>35 kg</weight>
+            <complaint></complaint>
+            <image>healthy-dog.jpg</image>
+            <species>Canine</species>
+        </summary>
+        <controls>
+            <color>#000000</color>
+            <control>
+                <title>Vocalizations</title>
+                <id>vocals-dog-control</id>
+                <top>125</top>
+                <left>300</left>
+            </control>
+            <control>
+                <title>Right Lung Sounds</title>
+                <id>right-lung-dog-control</id>
+                <top>180</top>
+                <left>80</left>
+            </control>
+            <control>
+                <title>Left Lung Sounds</title>
+                <id>left-lung-dog-control</id>
+                <top>180</top>
+                <left>320</left>
+            </control>
+            <control>
+                <title>Left Femoral Pulse</title>
+                <id>left-femoral-pulse-dog-control</id>
+                <top>275</top>
+                <left>320</left>
+            </control>
+            <control>
+                <title>Right Femoral Pulse</title>
+                <id>right-femoral-pulse-dog-control</id>
+                <top>275</top>
+                <left>75</left>
+            </control>
+            <control>
+                <title>Left Dorsal Pulse</title>
+                <id>left-dorsal-pulse-dog-control</id>
+                <top>310</top>
+                <left>325</left>
+            </control>
+            <control>
+                <title>Right Dorsal Pulse</title>
+                <id>right-dorsal-pulse-dog-control</id>
+                <top>310</top>
+                <left>85</left>
+            </control>
+            <control>
+                <title>Heart Sounds</title>
+                <id>heart-sound-dog-control</id>
+                <top>225</top>
+                <left>221</left>
+            </control>
+            <control>
+                <title>Chest Movement</title>
+                <id>chest-dog-control</id>
+                <top>210</top>
+                <left>325</left>
+            </control>
+            <control>
+                <title>CPR</title>
+                <id>button-cpr</id>
+                <top>20</top>
+                <left>450</left>
+            </control>
+            <control>
+                <title>ECG</title>
+                <id>button-ekg</id>
+                <top>350</top>
+                <left>0</left>
+            </control>
+            <control>
+                <title>SpO&lt;sub&gt;2&lt;&amp;#47;sub&gt;</title>
+                <id>button-SpO2</id>
+                <top>350</top>
+                <left>55</left>
+            </control>
+            <control>
+                <title>ETCO&lt;sub&gt;2&lt;&amp;#47;sub&gt;</title>
+                <id>button-CO2</id>
+                <top>350</top>
+                <left>395</left>
+            </control>
+            <control>
+                <title>Cuff</title>
+                <id>button-bpcuff</id>
+                <top>350</top>
+                <left>450</left>
+            </control>
+            <control>
+                <title>Palpate</title>
+                <id>button-palpate</id>
+                <top>20</top>
+                <left>390</left>
+            </control>
+            <control>
+                <title>Temp</title>
+                <id>button-Tperi</id>
+                <top>350</top>
+                <left>110</left>
+            </control>
+        </controls>
+    </profile>
+
+    <vocals>
+        <file>
+            <filename>M_Scream.wav</filename>
+            <title>Male Scream</title>
+        </file>
+        <file>
+            <filename>Moan.wav</filename>
+            <title>Male Moan</title>
+        </file>
+    </vocals>
+
+    <media>
+        <file>
+            <filename>3T-MRI-Horse-Brain.jpg</filename>
+            <title>MRI</title>
+        </file>
+        <file>
+            <filename>BloodWork.JPG</filename>
+            <title>Blood Work</title>
+        </file>
+        <file>
+            <filename>normalchest.jpg</filename>
+            <title>Chest XRay</title>
+        </file>
+    </media>
+
+    <events>
+        <category>
+            <name>drugs</name>
+            <title>Injected Drugs</title>
+            <event>
+                <title>Inject Epinephrene</title>
+                <id>inject_epinephrine</id>
+                <priority>1</priority>
+                <hotkey>E</hotkey>
+            </event>
+        </category>
+        <category>
+            <name>abc</name>
+            <title>ABC</title>
+            <event>
+                <title>Defib</title>
+                <id>aed</id>
+                <priority>1</priority>
+                <hotkey>d</hotkey>
+            </event>
+        </category>
+    </events>
+
+    <init>
+        <cardiac>
+            <rhythm>sinus</rhythm>
+            <vpc>none</vpc>
+            <vpc_freq>10</vpc_freq>
+            <vfib_amplitude>low</vfib_amplitude>
+            <rate>78</rate>
+            <bps_sys>90</bps_sys>
+            <bps_dia>60</bps_dia>
+            <nibp_rate>78</nibp_rate>
+            <heart_sound>normal</heart_sound>
+            <pea>0</pea>
+            <arrest>0</arrest>
+        </cardiac>
+        <respiration>
+            <spo2>95</spo2>
+            <etco2>30</etco2>
+            <rate>20</rate>
+        </respiration>
+        <general>
+            <temperature>994</temperature>
+        </general>
+        <initial_scene>1</initial_scene>
+        <record>1</record>
+    </init>
+
+    <scene>
+        <title>Healthy Dog</title>
+        <id>1</id>
+        <init>
+        </init>
+    </scene>
+
+</scenario>

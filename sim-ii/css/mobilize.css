@@ -1,0 +1,30 @@
+	.ui-slider {
+		float: left;
+		margin: 0;
+	}
+	
+	a.ui-slider-handle.ui-btn {
+		background-color: #FFFFFF;
+		border: 1px solid #000000;
+	}
+	
+	.ui-slider-track {
+		width: 150px;
+		float: left;
+		margin: -6px 0 0 0;
+	}
+	
+	.ui-slider-bg {
+		background-color: #B31B1B;
+	}
+	
+	.strip-value.new.control-slider-1 {
+		float: right;
+		height: 17px;
+		padding: 0;
+		margin: 0 0px 0 10px;
+		font-size: 1em;
+		line-height: 1.3em;
+		border: 1px solid grey;
+		width: 50px;
+	}

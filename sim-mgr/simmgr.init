@@ -1,0 +1,66 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Provides:          simmgr
+# Required-Start:    $local_fs $remote_fs $syslog
+# Required-Stop:
+# X-Start-Before:    rmnologin
+# Default-Start:     2 3 4 5
+# Default-Stop:		 0 1 6
+# Short-Description: Simulation Manager for Canine Sim
+# Description: Provide execution of the Simulation Manager and Pulse/Respiration Sync
+### END INIT INFO
+
+. /lib/lsb/init-functions
+
+SIMMGR_DAEMON=/usr/local/bin/simmgr
+PULSE_DAEMON=/usr/local/bin/simpulse
+PIDDIR=/var/run/simmgr
+S_PIDFILE=$PIDDIR/simmgr.pid
+P_PIDFILE=$PIDDIR/simpulse.pid
+DAEMONUSER=simmgr
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
+
+test -x $SIMMGR_DAEMON || exit 0
+test -x $PULSE_DAEMON || exit 0
+
+simmgr_start () {
+		log_daemon_msg "Starting Simulation Manager"
+        if [ ! -d $PIDDIR ]; then
+                mkdir -p $PIDDIR
+                chown $DAEMONUSER:$DAEMONUSER $PIDDIR
+        fi
+        $SIMMGR_DAEMON
+		$PULSE_DAEMON
+
+        log_end_msg ${status}
+}
+
+simmgr_stop() {
+		log_daemon_msg "Stopping Simulation Manager"
+        kill  $(cat $S_PIDFILE) 
+		kill  $(cat $P_PIDFILE) 
+        log_end_msg $?
+}
+
+case "$1" in
+  start|stop)
+		simmgr_${1}
+		;;
+  reload|restart)
+		simmgr_stop
+        simmgr_start
+        ;;
+## status_of_proc -p $S_PIDFILE "$SIMMGR_DAEMON" "status of simmgr" && exit 0 || exit $?
+
+  status)
+		status_of_proc -p $S_PIDFILE "$SIMMGR_DAEMON" "status of simmgr" || exit $?
+		status_of_proc -p $P_PIDFILE "$SIMMGR_DAEMON" "status of simpulse" || exit $?
+        ;;
+  *)
+        echo "Usage: $N {start|stop|reload|restart|status}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

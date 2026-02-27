@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenVetSim</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Splash / loading area ──────────────────────────────────────────────── */
+    #splash {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 40px;
+    }
+
+    .logo-ring {
+      width: 72px; height: 72px;
+      border: 3px solid #3d3d6b;
+      border-top-color: #a78bfa;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #splash-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #a78bfa;
+      letter-spacing: 0.02em;
+    }
+
+    #splash-sub {
+      font-size: 14px;
+      color: #64748b;
+      text-align: center;
+      max-width: 380px;
+      line-height: 1.5;
+    }
+
+    #log-tail {
+      font-family: 'SF Mono', 'Cascadia Mono', 'Consolas', monospace;
+      font-size: 11px;
+      color: #475569;
+      text-align: center;
+      max-width: 540px;
+      height: 16px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    /* Error state */
+    #error-box {
+      display: none;
+      background: #1f0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      padding: 16px 24px;
+      max-width: 440px;
+      text-align: center;
+    }
+
+    #error-box.visible { display: block; }
+    #error-box p { font-size: 13px; color: #fca5a5; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+  <div id="splash">
+    <div class="logo-ring" id="spinner"></div>
+    <div id="splash-title">OpenVetSim</div>
+    <div id="splash-sub">Starting simulation engine…</div>
+    <div id="log-tail"></div>
+    <div id="error-box"><p id="error-msg"></p></div>
+  </div>
+
+  <script>
+    const spinner  = document.getElementById('spinner');
+    const splashSub= document.getElementById('splash-sub');
+    const logTail  = document.getElementById('log-tail');
+    const errorBox = document.getElementById('error-box');
+    const errorMsg = document.getElementById('error-msg');
+
+    function applyState({ state, msg }) {
+      if (state === 'starting') {
+        spinner.style.display = '';
+        splashSub.textContent = 'Starting simulation engine…';
+        errorBox.classList.remove('visible');
+      } else if (state === 'running') {
+        // PHP UI (WebContentsView) now covers this page — nothing to show
+        spinner.style.display = 'none';
+        splashSub.textContent = 'Simulator is running.';
+        errorBox.classList.remove('visible');
+      } else if (state === 'error') {
+        spinner.style.display = 'none';
+        splashSub.textContent = 'The simulator encountered an error.';
+        if (msg) {
+          errorBox.classList.add('visible');
+          errorMsg.textContent = msg;
+        }
+      } else {
+        // stopped
+        spinner.style.display = 'none';
+        splashSub.textContent = 'Use Simulator > Start to launch the simulation engine.';
+        errorBox.classList.remove('visible');
+      }
+    }
+
+    simBridge.onState(applyState);
+
+    simBridge.onLog((line) => {
+      logTail.textContent = line;
+    });
+
+    simBridge.onExit(({ code, signal }) => {
+      applyState({ state: 'stopped' });
+      logTail.textContent = `Process exited (code ${code ?? signal})`;
+    });
+
+    // Auto-starts on launch
+    applyState({ state: 'starting' });
+  </script>
+</body>
+</html>

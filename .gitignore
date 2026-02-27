@@ -1,0 +1,45 @@
+# ── Node / Electron ───────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+OpenVetSim-App/dist/
+OpenVetSim-App/out/
+
+# ── C++ build artefacts ───────────────────────────────────────────────────────
+OpenVetSim/build/
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.dll
+*.dylib
+*.so
+
+# Visual Studio
+OpenVetSim/*.user
+OpenVetSim/*.VC.db
+OpenVetSim/*.VC.opendb
+OpenVetSim/.vs/
+OpenVetSim/x64/
+OpenVetSim/Debug/
+OpenVetSim/Release/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+*.DS_Store
+__MACOSX/
+
+# ── PHP / web ─────────────────────────────────────────────────────────────────
+*.log
+sim-mgr/tmp/
+sim-ii/tmp/
+
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Claude Cowork internal ────────────────────────────────────────────────────
+.claude/
+.skills/

@@ -1,0 +1,129 @@
+Installation and use of the Cornell Canine Simulator
+
+Installation of the software for this simulator requires acceptance and compliance with
+the software license described in the LICENSE file. Please read the license before
+installation.
+
+The software was designed for operation on an Ubuntu Desktop installed computer. Our
+initial development used Ubuntu 14.04 on an x86 system. 
+
+In addition to the basic Desktop installation, you will need to install the following
+packages:
+
+	GIT
+	LAMP Stack:
+		Apache 2
+		MySQL 5.5
+		PHP 5.5
+	phpmyadmin
+	GNU C++ Compiler (g++)
+	CGICC 
+	Open SSH Server
+	Opera
+	
+Git:
+
+	$ sudo apt-get install git
+	
+The LAMP Stack (Linux-Apache-MySQL-PHP) can be installed using the following commands:
+
+	$ sudo apt-get update
+	$ sudo apt-get install lamp-server^
+	
+Alternatively, you could install the separate components as detailed below.
+	
+PHPMYADMIN:
+Execute the following command:
+	$ sudo apt-get install phpmyadmin
+	
+If asked, select the Apache web server to be reconfigured.
+	
+After the install completes, create a link from the 'www' directory to the location of phpmyadmin:
+
+	$ sudo ln -s /usr/share/phpmyadmin /var/www/html/
+	
+
+GNU C++ Compiler:
+From your server console, execute the following commands:
+	$ sudo apt-get update	(Note: not needed if you did this step earlier)
+	$ sudo apt-get install g++
+
+OpenSSH Server:
+
+	$ sudo apt-get install openssh-server
+	
+CGICC:
+(from https://singhgurjot.wordpress.com/2012/05/14/how-to-use-cgicommon-gateway-interface-for-c-programming-in-ubuntu/)
+The Common Gateway Interface (CGI) is a standard protocol for enabling applications 
+(called CGI programs or CGI scripts) to interact with Web servers and with clients. 
+The software uses the CGICC library to build CGI programs in C++.
+
+To install CGICC files follow the steps given as:
+1. Open the terminal, and type the following commands-
+	$ wget ftp://ftp.gnu.org/gnu/cgicc/cgicc-3.0.tar.gz
+	$ tar xvf cgicc-3.0.tar.gz
+	$ sudo -s
+	# mv cgicc-3.0 /usr/include
+	# apt-get install build-essential libcgicc5 libcgicc5-dev libcgicc-doc
+	# apt-get update
+
+To configure apache web server for CGI wdit the file /etc/apache2/sites-available/000-default.conf 
+to include the following within the VirtualHost definition:
+
+	<Directory "/var/www/html/cgi-bin">
+		AllowOverride None
+		Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+		Order allow,deny
+		Allow from all
+	</Directory>
+
+Chrome:
+	$ sudo sh -c 'echo "deb http://deb.opera.com/opera/ stable non-free" >> /etc/apt/sources.list.d/opera.list'
+	$ sudo sh -c 'wget -O - http://deb.opera.com/archive.key | apt-key add -'
+	$ sudo apt-get update
+	$ sudo apt-get install opera
+	
+
+
+Build and Install the Canine Simulator:
+
+	$ make install
+	
+---------------------------------------
+Alternate install for LAMP components:
+The Apache, PHP5 and MySQL instructions are based on the content at
+https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-on-ubuntu-14-04. 
+You can visit that page for more details.
+
+
+Apache2: 
+From your server console, execute the following commands:
+
+	$ sudo apt-get update
+	$ sudo apt-get install apache2
+
+At this point, you should be able to open the default web page on you system. Check it with http://[your_server_IP_address.
+
+
+MySQL:
+From your server console, execute the following commands:
+	$ sudo apt-get install mysql-server php5-mysql
+	$ sudo mysql_install_db
+
+The next step will set a password for the "root" account in MySQL. This is not the same as the "root"
+account for linux. Be sure to write down the password.
+
+	$ sudo mysql_secure_installation
+
+
+PHP:
+From your server console, execute the following command:
+	$ sudo apt-get install php5 libapache2-mod-php5 php5-mcrypt
+	
+The web page we referenced above recommends adding "index.php" in the Directory Index in the
+file /etc/apache2/mods-enabled/dir.conf. This is optional.
+
+Now, restart the Apache2 server:
+
+	$ sudo service apache2 restart
+

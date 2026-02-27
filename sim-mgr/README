@@ -1,0 +1,32 @@
+This file describes the functions of the programs created in this directory
+
+simmgr
+	A daemon task to generate the base timing of the Simulator system and to provide the levels
+	the Vitals Display. simmagr opens and created the SHM file. The SHM file is the central 
+	interchange for commands in from the Instructor Interface and status out to all consumers.
+	
+	simmgr executes the scenario manager. On startup, it starts the "default" scenario. 
+	
+simstatus
+	A CGI task, called via the II to pass commands in and to get status. It communicates through the SHM file.
+	
+	simstatus installs in the cgi-bin directory.
+	
+/run/shm/simmgr
+	Shared Memory File for the Simulation Manager. Referred to as the SHM file, this is created by
+	the simmgr. The file is read/write by all applications that access it, but individual values
+	should never have more than one writer. This file is created and initialized by simmgr.
+	
+includes/simmgr.h
+	The content of the SHM file is defined here. Other common definitions for the simmgr system are also
+	provided in this header file.
+	
+src/simstatus.cpp
+	Source file for simstatus.cgi.
+	
+src/simmgr.cpp
+	Source file for simmgr.
+	
+src/simutil.c
+	Common functions shared by Simulation Manager programs
+	

@@ -1,0 +1,64 @@
+{
+  "name": "openvetsim",
+  "productName": "OpenVetSim",
+  "version": "1.0.0",
+  "description": "Open Veterinary Simulation Manager",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist": "electron-builder --mac --win"
+  },
+  "build": {
+    "appId": "edu.cornell.vetsim.openvetsim",
+    "productName": "OpenVetSim",
+    "files": [
+      "main.js",
+      "preload.js",
+      "toolbar.html",
+      "loading.html"
+    ],
+    "extraResources": [
+      {
+        "from": "../OpenVetSim/build/bin/WinVetSim",
+        "to": "bin/WinVetSim",
+        "filter": ["**/*"]
+      },
+      { "from": "../sim-ii",     "to": "sim-ii",     "filter": ["**/*"] },
+      { "from": "../sim-mgr",    "to": "sim-mgr",    "filter": ["**/*"] },
+      { "from": "../sim-ctl",    "to": "sim-ctl",    "filter": ["**/*"] },
+      { "from": "../sim-player", "to": "sim-player", "filter": ["**/*"] },
+      { "from": "../scenarios",  "to": "scenarios",  "filter": ["**/*"] }
+    ],
+    "mac": {
+      "category": "public.app-category.medical",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "../OpenVetSim/build/bin/WinVetSim.exe",
+          "to": "bin/WinVetSim.exe"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

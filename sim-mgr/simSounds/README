@@ -1,0 +1,41 @@
+#
+# This file is part of the sim-mgr distribution (https://github.com/OpenVetSimDevelopers/sim-mgr).
+# 
+# Copyright (c) 2019 VetSim, Cornell University College of Veterinary Medicine Ithaca, NY
+# 
+# This program is free software: you can redistribute it and/or modify  
+# it under the terms of the GNU General Public License as published by  
+# the Free Software Foundation, version 3.
+#
+# This program is distributed in the hope that it will be useful, but 
+# WITHOUT ANY WARRANTY; without even the implied warranty of 
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License 
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+This directory contains the files required for the "Tsunami Super WAV Trigger"
+used in the Simulator Controller. 
+
+For details on the Tsunami, see the Product Page at http://robertsonics.com/tsunami/ and
+the User Guide at http://robertsonics.com/tsunami-user-guide/.
+
+
+Files in ths directory:
+	*.wav - Sounds used for auscultation and vocalizations
+	tsunami.ini - Tsunami Configuration
+	tsunamix.hex - Tsunami Mono Firmware
+	
+The files of this directory should be copied to a FAT16 or FAT32 formatted MicroSD card 
+and installed in the Tsunami. The MicroSD card should be speed class 4 or 10, non-UHS.
+See http://robertsonics.com/microsd-cards-for-audio/ for details.
+
+The Tsunami is used in Mono mode, but is initialy installed with Stereo firmware. To load the
+new firmware:
+
+	1. Put the card into Tsunami and make sure Tsunami is powered.
+	2. Press and hold the user button and then tap the reset button.
+	   Wait for Tsunami’s LED to go on solid.
+	3. Release the user button and tap the reset button, or power-cycle the Tsunami.
+	You should now be running the new firmware.

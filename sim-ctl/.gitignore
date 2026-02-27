@@ -1,0 +1,12 @@
+*.o
+*.cgi
+pulse
+ain_air_test
+ainmon
+tsunami_test
+cprScan
+breathSense
+rfidScan
+simController
+simCurl
+soundSense

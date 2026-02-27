@@ -1,0 +1,209 @@
+<?xml version="1.0"?>
+<scenario>
+	<header>
+		<author>Terry K</author>
+		<title>Test Scenario 1</title>
+		<date_of_creation>2016-06-03</date_of_creation>
+		<description>A framework test scenario</description>
+	</header>
+	<profile>
+		<imageURL>dog_profile.jpg</imageURL>
+		<summary>
+			<description>
+				Fred, a 4 year old small German Shepard, is in generally good health, but has lateley
+				been lethargic. Appetite is poor, and he pants excessively.
+			</description>
+			<breed>German Shepard</breed>
+			<gender>Male</gender>
+			<weight>35 kg</weight>
+			<symptoms>
+			Not eating, no energy, excessive panting.
+			</symptoms>
+		</summary>
+		<controls>
+			<control>
+				<title>Vocals</title>
+				<id>vocals-dog-control</id>
+				<top>45</top>
+				<left>405</left>
+			</control>
+			<control>
+				<title>Pulse</title>
+				<id>pulse-dog-control</id>
+				<top>160</top>
+				<left>135</left>
+			</control>
+		</controls>
+		<vocals>
+			<file>
+				<url>bark.wav</url>
+				<title>Barking</title>
+			</file>
+			<file>
+				<url>growl.wav</url>
+				<title>Growling</title>
+			</file>
+		</vocals>
+	</profile>
+	<media>
+		<file>
+			<url>mri.jpg</url>
+			<title>MRI of healthy dog</title>
+		</file>
+		<file>
+			<url>x-ray.pdf</url>
+			<title>X-Ray of healthy dog</title>
+		</file>
+		<file>
+			<url>blood_work.jpg</url>
+			<title>Blood work of healthy dog</title>
+		</file>
+	</media>
+
+   <init>
+		<cardiac>
+			<rhythm>normal</rhythm>
+			<vpc>none</vpc>
+			<pea>1</pea>
+			<vpc_freq>10</vpc_freq>
+			<vfib_amplitude>low</vfib_amplitude>
+			<rate>80</rate>
+			<pwave>none</pwave>
+			<pr_interval>140</pr_interval>
+			<qrs_interval>85</qrs_interval>
+			<bps_sys>105</bps_sys>
+			<bps_dia>70</bps_dia>
+		</cardiac>
+		<respiration>
+			<left_sound_in>normal</left_sound_in>
+			<left_sound_out>normal</left_sound_out>
+			<left_sound_back>normal</left_sound_back>
+			<right_sound_in>normal</right_sound_in>
+			<right_sound_out>normal</right_sound_out>
+			<right_sound_back>normal</right_sound_back>
+			<inhalation_duration>1350</inhalation_duration>
+			<exhalation_duration>1050</exhalation_duration>
+			<spo2>95</spo2>
+			<rate>20</rate>
+		</respiration>			
+		<general>
+			<temperature>1017</temperature>
+		</general>
+		<scene>1</scene>
+   </init>
+	<events>
+		<category>
+			<name>drugs</name>
+			<title>Injected Drugs</title>
+			<event>
+				<title>Morphine</title>
+				<id>opiate_morphine</id>
+			</event>
+			<event>
+				<title>Vicodin</title>
+				<id>hydrocodone</id>
+			</event>
+		</category>
+		<category>
+			<name>abc</name>
+			<title>ABC</title>
+			<event>
+				<title>Intubate</title>
+				<id>intubate</id>
+			</event>
+			<event>
+				<title>CPR</title>
+				<id>cpr</id>
+			</event>
+			<event>
+				<title>Shock</title>
+				<id>aed</id>
+			</event>
+		</category>
+	</events>
+	<scene>
+		<!-- Starting scene. Wait until timeout and jump to next scene -->
+		<title>Start</title>
+		<id>1</id>
+		<init>
+			<cardiac>
+				<rhythm>normal</rhythm>
+				<vpc>none</vpc>
+				<pea>1</pea>
+				<rate>80</rate>
+				<transfer_time>0</transfer_time>
+				<bps_sys>96</bps_sys>
+				<bps_dia>70</bps_dia>
+			</cardiac>
+			<respiration>
+				<spo2>98</spo2>
+				<rate>50</rate>
+				<transfer_time>0</transfer_time>
+			</respiration>
+			<general>
+				<temperature>1007</temperature>
+				<transfer_time>30</transfer_time>
+			</general>
+		</init>
+		
+		<timeout>
+			<timeout_value>20</timeout_value>
+			<scene_id>2</scene_id>
+		</timeout>
+	</scene>
+	<scene>
+		<!-- test BP Rise trigger -->
+		<title>BP Rise</title>
+		<id>2</id>
+		<init>
+			<cardiac>
+				<rate>90</rate>
+				<bps_sys>134</bps_sys>
+				<bps_dia>110</bps_dia>
+				<transfer_rate>30</transfer_rate>
+			</cardiac>
+		</init>
+		<triggers>
+			<trigger>
+				<trigger>EQ</trigger>
+				<cardiac>
+					<bps_sys>130</bps_sys>
+				</cardiac>
+				<scene_id>3</scene_id>
+			</trigger>
+		</triggers>
+	</scene>
+	<scene>
+		<!-- Test Cardiac Rate Drop Trigger -->
+		<title>Heart Rate Drop Check</title>
+		<id>3</id>
+		<init>
+			<cardiac>
+				<rate>70</rate>
+				<transfer_time>20</transfer_time>
+			</cardiac>
+		</init>
+		<triggers>
+			<trigger>
+				<test>LTE</test>
+				<cardiac>
+					<rate>70</rate>
+				</cardiac>
+				<scene_id>4</scene_id>
+			</trigger>
+			<trigger>
+				<test>LTE</test>
+				<general>
+					<temperature>1007</temperature>
+				</general>
+				<scene_id>4</scene_id>
+			</trigger>
+
+		</triggers>
+	</scene>
+	<scene>
+		<title>End</title>
+		<id>4</id>
+		<end>Successful Completion</end>
+	</scene>
+</scenario>
