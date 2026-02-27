@@ -25,6 +25,7 @@
         "to": "bin/WinVetSim",
         "filter": ["**/*"]
       },
+      { "from": "../OpenVetSim/build/bin/PHP8.0", "to": "bin/PHP8.0", "filter": ["**/*"] },
       { "from": "../sim-ii",     "to": "sim-ii",     "filter": ["**/*"] },
       { "from": "../sim-mgr",    "to": "sim-mgr",    "filter": ["**/*"] },
       { "from": "../sim-ctl",    "to": "sim-ctl",    "filter": ["**/*"] },

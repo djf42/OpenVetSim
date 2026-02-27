@@ -28,12 +28,15 @@ OpenVetSim drives a high-fidelity mannequin simulator, providing realistic physi
 - Xcode command-line tools (`xcode-select --install`)
 - CMake ≥ 3.20
 - Node.js ≥ 20 + npm
-- PHP 8.x (for development / local testing)
 
 **Windows**
 - Visual Studio 2022 with C++ workload
 - CMake ≥ 3.20
 - Node.js ≥ 20 + npm
+
+> **PHP is bundled automatically** — you do not need to install PHP separately.
+> A self-contained static PHP binary is downloaded by the scripts below and
+> bundled into the packaged app so end-users need nothing extra.
 
 ### 1 — Build the C++ engine
 
@@ -57,7 +60,25 @@ npm start
 
 The app automatically locates the binary at `../OpenVetSim/build/bin/OpenVetSim` relative to the app directory.
 
-### 3 — Package a distributable
+### 3 — Download the bundled PHP binary
+
+The packaged app ships with a static PHP CLI binary so end-users don't need PHP installed. Download it once before packaging (or before running in dev mode if you don't have PHP system-wide):
+
+**macOS:**
+```bash
+chmod +x scripts/download-php.sh
+./scripts/download-php.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\download-php.ps1
+```
+
+This places the binary at `OpenVetSim/build/bin/PHP8.0/php` (macOS) or `PHP8.0\php.exe` (Windows). The `.gitignore` excludes it from version control.
+
+### 4 — Package a distributable
 
 ```bash
 cd OpenVetSim-App

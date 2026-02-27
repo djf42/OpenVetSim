@@ -5,6 +5,8 @@ OpenVetSim-App/dist/
 OpenVetSim-App/out/
 
 # ── C++ build artefacts ───────────────────────────────────────────────────────
+# Note: OpenVetSim/build/bin/PHP8.0/ (bundled PHP binary) is also covered here.
+# Populate it by running scripts/download-php.sh (macOS) or download-php.ps1 (Windows).
 OpenVetSim/build/
 *.o
 *.obj
