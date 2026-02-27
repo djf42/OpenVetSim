@@ -30,6 +30,10 @@
   ExecWait 'xcopy /E /I /Y /Q "$INSTDIR\resources\sim-player" "$PROGRAMDATA\OpenVetSim\sim-player"'
   ExecWait 'xcopy /E /I /Y /Q "$INSTDIR\resources\scenarios"  "$PROGRAMDATA\OpenVetSim\scenarios"'
 
+  ; Create a desktop shortcut to the scenarios folder on the All Users desktop
+  ; so every account on this machine can find it easily.
+  CreateShortCut "$COMMONDESKTOP\OpenVetSim Scenarios.lnk" "$PROGRAMDATA\OpenVetSim\scenarios"
+
 !macroend
 
 ; ── Uninstall ─────────────────────────────────────────────────────────────────
@@ -40,6 +44,9 @@
   RMDir /r "$PROGRAMDATA\OpenVetSim\sim-mgr"
   RMDir /r "$PROGRAMDATA\OpenVetSim\sim-ctl"
   RMDir /r "$PROGRAMDATA\OpenVetSim\sim-player"
+
+  ; Remove the desktop shortcut
+  Delete "$COMMONDESKTOP\OpenVetSim Scenarios.lnk"
 
   ; Ask before deleting user-generated data (scenarios and session logs/videos).
   MessageBox MB_YESNO|MB_ICONQUESTION \

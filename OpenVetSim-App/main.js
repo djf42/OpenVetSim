@@ -36,7 +36,8 @@ function getBinaryPath() {
 // This is the directory the binary uses as its working root: it cd's here to
 // launch the PHP server (sim-ii/router.php) and looks for scenarios/ and simlogs/.
 //
-//   Packaged Mac:     Contents/Resources/     (everything bundled here by electron-builder)
+//   Packaged Mac:     ~/Library/Application Support/OpenVetSim/
+//                     (writable; populated from bundle by initUserData() on each launch)
 //   Packaged Windows: %PROGRAMDATA%\OpenVetSim (shared across all users on the machine;
 //                     the NSIS installer copies web files and scenarios here)
 //   Development:      repo root (parent of OpenVetSim-App/) — sim-ii, sim-mgr etc. live there
@@ -48,10 +49,65 @@ function getHtmlPath() {
       // The NSIS installer is responsible for populating OpenVetSim\ here.
       return path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'OpenVetSim');
     }
-    return process.resourcesPath;   // macOS/Linux: inside the .app bundle
+    // macOS: Application Support is writable, so users can add scenarios and
+    // simlogs (including video files) can grow freely.
+    return path.join(app.getPath('appData'), 'OpenVetSim');
   }
   // __dirname is OpenVetSim-App/; one level up is the repo root
   return path.join(__dirname, '..');
+}
+
+// ─── Sync bundled content to Application Support (macOS packaged only) ────────
+// Called once on every launch before the binary starts.
+//
+//   Web app dirs (sim-ii etc.) — always overwritten so they stay current when
+//     the app is updated via a new DMG install.
+//   scenarios/                 — copied only if absent, so user-added scenarios
+//     are never clobbered by an app update.
+//   simlogs/video/             — created if missing; never touched otherwise.
+//
+const WEB_DIRS = ['sim-ii', 'sim-mgr', 'sim-ctl', 'sim-player'];
+
+function initUserData() {
+  if (!app.isPackaged || process.platform !== 'darwin') return;
+
+  const userDir = getHtmlPath();                // ~/Library/Application Support/OpenVetSim
+  const bundleDir = process.resourcesPath;      // Contents/Resources
+
+  // Always refresh PHP web app files so app updates take effect immediately
+  for (const dir of WEB_DIRS) {
+    const src  = path.join(bundleDir, dir);
+    const dest = path.join(userDir, dir);
+    if (fs.existsSync(src)) {
+      fs.rmSync(dest, { recursive: true, force: true });
+      fs.cpSync(src, dest, { recursive: true });
+    }
+  }
+
+  // Seed scenarios on first run only — preserve any user-added scenarios
+  const scenariosSrc  = path.join(bundleDir, 'scenarios');
+  const scenariosDest = path.join(userDir, 'scenarios');
+  if (fs.existsSync(scenariosSrc) && !fs.existsSync(scenariosDest)) {
+    fs.cpSync(scenariosSrc, scenariosDest, { recursive: true });
+  }
+
+  // Ensure writable log directories exist
+  fs.mkdirSync(path.join(userDir, 'simlogs', 'video'), { recursive: true });
+
+  // Create a Desktop shortcut (symlink) to the scenarios folder so users can
+  // find it easily. Use lstatSync (not existsSync) so we detect the symlink
+  // itself rather than its target — avoids recreating a shortcut the user moved.
+  const desktopLink = path.join(app.getPath('desktop'), 'OpenVetSim Scenarios');
+  try {
+    fs.lstatSync(desktopLink);   // throws if nothing exists at this path
+  } catch (e) {
+    // Nothing there — create the symlink
+    try {
+      fs.symlinkSync(scenariosDest, desktopLink);
+    } catch (symlinkErr) {
+      console.warn('Could not create Desktop shortcut:', symlinkErr.message);
+    }
+  }
 }
 
 // ─── Globals ──────────────────────────────────────────────────────────────────
@@ -393,6 +449,7 @@ ipcMain.handle('sim-status', () => new Promise((resolve) => {
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  initUserData();  // sync bundled web files → Application Support (macOS only)
   createWindow();
   startBinary();   // auto-start on launch
 
