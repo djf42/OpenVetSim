@@ -17,7 +17,6 @@
     "files": [
       "main.js",
       "preload.js",
-      "toolbar.html",
       "loading.html"
     ],
     "extraResources": [
