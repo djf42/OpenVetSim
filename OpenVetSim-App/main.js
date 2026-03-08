@@ -2,7 +2,7 @@
 
 const {
   app, BrowserWindow, WebContentsView,
-  ipcMain, Menu, shell, dialog,
+  ipcMain, Menu, shell, dialog, clipboard,
 } = require('electron');
 const path   = require('path');
 const { spawn, execSync } = require('child_process');
@@ -165,7 +165,9 @@ function waitForPHP() {
 function killOrphanedPHP() {
   try {
     if (process.platform === 'win32') {
-      execSync('taskkill /F /FI "WINDOWTITLE eq WinVetSim PHP"', { stdio: 'ignore' });
+      // PHP now runs as a hidden DETACHED_PROCESS (no window title to match),
+      // so kill by image name instead.
+      execSync('taskkill /F /IM php.exe /T', { stdio: 'ignore' });
     } else {
       // Matches the exact command the binary launches: php -S ... router.php
       execSync("pkill -9 -f 'php.*router\\.php'", { stdio: 'ignore' });
@@ -233,9 +235,10 @@ function startBinary() {
     }
 
   simProcess = spawn(binPath, [], {
-    cwd:      path.dirname(binPath),
-    stdio:    ['ignore', 'pipe', 'pipe'],
-    detached: false,
+    cwd:          path.dirname(binPath),
+    stdio:        ['ignore', 'pipe', 'pipe'],
+    detached:     false,
+    windowsHide:  true,   // prevent console window appearing on Windows
     env: {
       ...process.env,
       OPENVETSIM_HTML_PATH: getHtmlPath(),
@@ -385,6 +388,21 @@ function buildMenu() {
     { type: 'separator' },
     { label: 'Open in Browser', click: () => shell.openExternal(PHP_URL) },
     { type: 'separator' },
+    {
+      label: 'Copy Video Log Path',
+      click: () => {
+        const videoPath = path.join(getHtmlPath(), 'simlogs', 'video');
+        clipboard.writeText(videoPath);
+        dialog.showMessageBox(mainWin, {
+          type: 'info',
+          title: 'Video Log Path Copied',
+          message: 'Video log path copied to clipboard:',
+          detail: videoPath,
+          buttons: ['OK'],
+        });
+      },
+    },
+    { type: 'separator' },
     { role: 'quit' },
   ];
 
@@ -471,7 +489,9 @@ app.on('window-all-closed', () => {
   });
 });
 
-// Safety net: if before-quit fires while the binary is still alive, kill it.
+// Safety net: if before-quit fires while the binary is still alive, kill it
+// and ensure the PHP server it launched is also torn down.
 app.on('before-quit', () => {
   if (simProcess) simProcess.kill('SIGKILL');
+  killOrphanedPHP();
 });

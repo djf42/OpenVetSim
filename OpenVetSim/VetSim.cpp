@@ -234,12 +234,6 @@ int vetsim()
 		sprintf_s(msg_buf, BUF_SIZE, "%s", "PHP Server OK!!");
 		log_message("", msg_buf);
 	}
-	// Open web page (Windows only — Electron shell handles this on other platforms)
-#ifdef _WIN32
-	sprintf_s(cmd, BUF_SIZE, "start http://%s:%d/sim-ii", PHP_SERVER_ADDR, PHP_SERVER_PORT );
-	system(cmd);
-#endif
-	
 #ifdef _WIN32
 	obsd.obsWnd = NULL;
 #endif
@@ -1296,8 +1290,7 @@ bool
 isRhythmPulsed(char* rhythm)
 {
 	if ((strcmp(rhythm, "asystole") == 0) ||
-		(strcmp(rhythm, "vfib") == 0) ||
-		(strcmp(rhythm, "afib") == 0))
+		(strcmp(rhythm, "vfib") == 0))
 	{
 		currentIsRegular = false;
 		return (false);

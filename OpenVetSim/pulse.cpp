@@ -901,7 +901,7 @@ pulseProcessChild(void)
 			afibActive = 1;
 			set_pulse_rate(simmgr_shm->status.cardiac.rate);
 		}
-		else if (afibActive )
+		else if (afibActive && strncmp(simmgr_shm->status.cardiac.rhythm, "afib", 4) != 0)
 		{
 			afibActive = 0;
 			set_pulse_rate(simmgr_shm->status.cardiac.rate);
@@ -937,47 +937,74 @@ pulseProcessChild(void)
 	exit(204);
 }
 
-#ifdef _WIN32  // libcurl only available on Windows build
-#include <curl/curl.h>
+#ifdef _WIN32  // WinHTTP-based controller-version query (Windows built-in, no external deps)
+#include <winhttp.h>
 #include <string>
+#include <vector>
 
-// Callback for libcurl to write received data into a std::string
-static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
-{
-	size_t totalSize = size * nmemb;
-	std::string* str = (std::string*)userp;
-	str->append((char*)contents, totalSize);
-	std::cout << "ctlstatus.cgi returns " << size << std::endl << contents << std::endl;
-
-	return totalSize;
-}
-
-// Reads a web page using libcurl and returns the contents as a std::string
+// Reads a web page using the Windows WinHTTP API directly.
+// No external libraries needed — WinHTTP is built into every Windows installation.
+// Handles plain http://host/path URLs as used by the local CGI endpoints.
 std::string ReadWebPage(const std::string& url)
 {
-	CURL* curl = curl_easy_init();
-	std::string response;
+	// Strip "http://" prefix
+	std::string rest = url;
+	if (rest.size() > 7 && rest.substr(0, 7) == "http://")
+		rest = rest.substr(7);
 
-	if (curl)
-	{
-		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // Follow redirects
-
-		CURLcode res = curl_easy_perform(curl);
-		curl_easy_cleanup(curl);
-
-		if (res != CURLE_OK)
-		{
-			// http://192.168.1.136/cgi-bin/ctlstatus.cgi
-			// Optionally handle error
-			std::cout << "CURL returns " << curl_easy_strerror(res) << std::endl;
-			std::cout << "CURL URL " << url << std::endl;
-			return "";
-		}
+	// Split into host and path
+	std::string host, path;
+	size_t slash = rest.find('/');
+	if (slash == std::string::npos) {
+		host = rest;
+		path = "/";
+	} else {
+		host = rest.substr(0, slash);
+		path = rest.substr(slash);
 	}
-	// std::cout << "ReadWebPage " << std::endl << response << std::endl;
+
+	std::wstring whost(host.begin(), host.end());
+	std::wstring wpath(path.begin(), path.end());
+
+	HINTERNET hSession = WinHttpOpen(L"WinVetSim/1.0",
+		WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	if (!hSession) return "";
+
+	HINTERNET hConnect = WinHttpConnect(hSession, whost.c_str(),
+		INTERNET_DEFAULT_HTTP_PORT, 0);
+	if (!hConnect) { WinHttpCloseHandle(hSession); return ""; }
+
+	HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", wpath.c_str(),
+		NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+	if (!hRequest) {
+		WinHttpCloseHandle(hConnect);
+		WinHttpCloseHandle(hSession);
+		return "";
+	}
+
+	if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+			WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+		!WinHttpReceiveResponse(hRequest, NULL))
+	{
+		std::cout << "WinHTTP request failed for URL: " << url << std::endl;
+		WinHttpCloseHandle(hRequest);
+		WinHttpCloseHandle(hConnect);
+		WinHttpCloseHandle(hSession);
+		return "";
+	}
+
+	std::string response;
+	DWORD dwSize = 0;
+	while (WinHttpQueryDataAvailable(hRequest, &dwSize) && dwSize > 0) {
+		std::vector<char> buf(dwSize + 1, '\0');
+		DWORD dwRead = 0;
+		if (WinHttpReadData(hRequest, buf.data(), dwSize, &dwRead))
+			response.append(buf.data(), dwRead);
+	}
+
+	WinHttpCloseHandle(hRequest);
+	WinHttpCloseHandle(hConnect);
+	WinHttpCloseHandle(hSession);
 	return response;
 }
 

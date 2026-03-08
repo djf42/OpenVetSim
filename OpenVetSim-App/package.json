@@ -1,7 +1,7 @@
 {
   "name": "openvetsim",
   "productName": "OpenVetSim",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Open Veterinary Simulation Manager",
   "main": "main.js",
   "scripts": {
@@ -20,11 +20,6 @@
       "loading.html"
     ],
     "extraResources": [
-      {
-        "from": "../OpenVetSim/build/bin/WinVetSim",
-        "to": "bin/WinVetSim",
-        "filter": ["**/*"]
-      },
       { "from": "../OpenVetSim/build/bin/PHP8.0", "to": "bin/PHP8.0", "filter": ["**/*"] },
       { "from": "../sim-ii",     "to": "sim-ii",     "filter": ["**/*"] },
       { "from": "../sim-mgr",    "to": "sim-mgr",    "filter": ["**/*"] },
@@ -37,7 +32,10 @@
       "target": [
         { "target": "dmg", "arch": ["arm64", "x64"] }
       ],
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "extraResources": [
+        { "from": "../OpenVetSim/build/bin/WinVetSim", "to": "bin/WinVetSim" }
+      ]
     },
     "win": {
       "target": [
@@ -45,10 +43,7 @@
       ],
       "icon": "assets/icon.ico",
       "extraResources": [
-        {
-          "from": "../OpenVetSim/build/bin/WinVetSim.exe",
-          "to": "bin/WinVetSim.exe"
-        }
+        { "from": "../OpenVetSim/build/bin/WinVetSim.exe", "to": "bin/WinVetSim.exe" }
       ]
     },
     "nsis": {

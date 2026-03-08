@@ -30,7 +30,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 		exit();
 	}
 	else if ( ( key_exists('OS', $_SERVER) && strcmp($_SERVER['OS'], "Windows" ) == 0 ) ||
-	 ( key_exists('SERVER_SOFTWARE', $_SERVER) && strncmp($_SERVER['SERVER_SOFTWARE'], "PHP ", 4 ) == 0 ) )
+	 ( key_exists('SERVER_SOFTWARE', $_SERVER) && strncmp($_SERVER['SERVER_SOFTWARE'], "PHP", 3 ) == 0 ) )
 {
 	$_SESSION['User']['UserFirstName'] = "";
 	$_SESSION['User']['UserLastName'] = "";

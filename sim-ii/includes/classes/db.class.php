@@ -203,7 +203,7 @@ else
 			return $result;
 		}	
 				
-		public static function dbError($query="db error", $connection, $mode="debug") {
+		public static function dbError($query, $connection, $mode="debug") {
 			if ($mode == "debug") {
 				die($query.": ".mysqli_error($connection));
 			} else {

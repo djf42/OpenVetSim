@@ -95,6 +95,13 @@ if(WIN32)
         Ws2_32      # WinSock2
         Psapi       # Process status API
         winmm       # Windows Multimedia (timing)
+        Winhttp     # WinHTTP (used by ReadWebPage in pulse.cpp)
+    )
+    # Release builds use wWinMain (Win32 GUI subsystem).
+    # Debug builds use main() (console subsystem) for easier log output.
+    target_link_options(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:/SUBSYSTEM:WINDOWS>
+        $<$<CONFIG:Debug>:/SUBSYSTEM:CONSOLE>
     )
 elseif(APPLE)
     # macOS: pthreads are part of libSystem; filesystem is in libc++
@@ -141,23 +148,35 @@ if(NOT WIN32 OR NOT NLOHMANN_JSON_INCLUDE)
         target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
     else()
         include(FetchContent)
+        # Download json.hpp into <build>/include/nlohmann/ so that
+        # #include <nlohmann/json.hpp> resolves correctly on all platforms.
         FetchContent_Declare(
             nlohmann_json
             URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.hpp
             DOWNLOAD_NO_EXTRACT TRUE
-            DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/nlohmann"
+            DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/include/nlohmann"
         )
         FetchContent_MakeAvailable(nlohmann_json)
-        target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_BINARY_DIR}/nlohmann")
+        target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_BINARY_DIR}/include")
         message(STATUS "nlohmann/json: using FetchContent (single header)")
     endif()
 endif()
 
 # ----------------------------------------------------------------
 # Output directories — keep binaries tidy
+#
+# Single-config generators (Ninja, Makefiles) use RUNTIME_OUTPUT_DIRECTORY.
+# Multi-config generators (Visual Studio, Xcode) append the config name
+# (e.g. Release/) unless the per-config property is also set.
+# Setting all four common configs ensures the .exe always lands in
+# build/bin/ regardless of generator, which is what package.json expects.
 # ----------------------------------------------------------------
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY                "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG          "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE        "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL     "${CMAKE_BINARY_DIR}/bin"
 )
 
 # ----------------------------------------------------------------

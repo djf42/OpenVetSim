@@ -57,8 +57,8 @@ void
 stopPHPServer(void)
 {
 #ifdef _WIN32
-	// Windows: taskkill by window title (matches the "start" command title)
-	system("taskkill /FI \"WINDOWTITLE eq WinVetSim PHP\"");
+	// Kill the php.exe process launched by startPHPServer().
+	system("taskkill /F /IM php.exe /T");
 #else
 	// POSIX: kill by matching command-line pattern
 	// "pkill -f" sends SIGTERM to all processes whose argv matches the pattern.
@@ -185,12 +185,46 @@ startPHPServer(void)
 	printf("Starting PHP Server from %s\n", phpPath);
 
 #ifdef _WIN32
-	// Windows: use "start" so PHP gets its own console window and we can
-	// identify it later by the window title for taskkill.
-	sprintf_s(commandLine, sizeof(commandLine),
-		"start \"WinVetSim PHP\" /d \"%s\" /min \"%s/%s\" -S %s:%d sim-ii/router.php",
-		localConfig.html_path, phpPath, "php.exe",
-		PHP_SERVER_ADDR, PHP_SERVER_PORT);
+	// Windows: launch PHP via CreateProcess with CREATE_NO_WINDOW so no
+	// console or taskbar entry appears.  Output is redirected to the PHP log.
+	{
+		char phpLog[FILENAME_MAX];
+		sprintf_s(phpLog, sizeof(phpLog), "%s\\simlogs\\php.log", localConfig.html_path);
+
+		SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
+		HANDLE hLog = CreateFileA(phpLog, GENERIC_WRITE,
+			FILE_SHARE_READ, &sa,
+			OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (hLog != INVALID_HANDLE_VALUE)
+			SetFilePointer(hLog, 0, nullptr, FILE_END);
+
+		STARTUPINFOA si = { sizeof(si) };
+		si.dwFlags     = STARTF_USESTDHANDLES;
+		si.hStdInput   = INVALID_HANDLE_VALUE;
+		si.hStdOutput  = (hLog != INVALID_HANDLE_VALUE) ? hLog : INVALID_HANDLE_VALUE;
+		si.hStdError   = (hLog != INVALID_HANDLE_VALUE) ? hLog : INVALID_HANDLE_VALUE;
+
+		PROCESS_INFORMATION pi = {};
+		char phpCmd[4096];
+		sprintf_s(phpCmd, sizeof(phpCmd),
+			"\"%s\\php.exe\" -S %s:%d sim-ii/router.php",
+			phpPath, PHP_SERVER_ADDR, PHP_SERVER_PORT);
+
+		if (CreateProcessA(nullptr, phpCmd, nullptr, nullptr,
+			TRUE,  // inherit handles so log file is passed through
+			CREATE_NO_WINDOW | DETACHED_PROCESS,
+			nullptr, localConfig.html_path, &si, &pi))
+		{
+			CloseHandle(pi.hProcess);
+			CloseHandle(pi.hThread);
+		}
+		if (hLog != INVALID_HANDLE_VALUE)
+			CloseHandle(hLog);
+
+		// Record what we launched for the log
+		sprintf_s(commandLine, sizeof(commandLine),
+			"%s (CreateProcess, no window, log: %s)", phpCmd, phpLog);
+	}
 #else
 	// POSIX: launch as background process, redirect output to a log file.
 	sprintf_s(commandLine, sizeof(commandLine),
@@ -201,7 +235,9 @@ startPHPServer(void)
 
 	sprintf_s(mbuf, sizeof(mbuf), "starting PHP: %s", commandLine);
 	log_message("", mbuf);
+#ifndef _WIN32
 	system(commandLine);
+#endif
 
 	// Poll until the server is up (up to 1 second in 10 ms steps)
 	for (int checkCount = 100; checkCount > 0; checkCount--)

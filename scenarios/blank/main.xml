@@ -95,13 +95,13 @@
                 <left>0</left>
             </control>
             <control>
-                <title>SpO&lt;sub&gt;2&lt;&amp;#47;sub&gt;</title>
+                <title>SpO&lt;sub&gt;2&lt;/sub&gt;</title>
                 <id>button-SpO2</id>
                 <top>350</top>
                 <left>55</left>
             </control>
             <control>
-                <title>ETCO&lt;sub&gt;2&lt;&amp;#47;sub&gt;</title>
+                <title>ETCO&lt;sub&gt;2&lt;/sub&gt;</title>
                 <id>button-CO2</id>
                 <top>350</top>
                 <left>395</left>

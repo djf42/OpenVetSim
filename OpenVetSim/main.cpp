@@ -22,6 +22,9 @@
 */
 
 #include "vetsim.h"
+#ifdef _WIN32
+#include <comdef.h>     // _bstr_t used in checkProcessRunning()
+#endif
 
 // Version string shown in window title and console
 char WVSversion[STR_SIZE];
@@ -95,7 +98,6 @@ setWVSVersion(void)
 int checkProcessRunning(void)
 {
 #ifdef _WIN32
-	#include <comdef.h>
 	PROCESSENTRY32 entry;
 	entry.dwSize = sizeof(PROCESSENTRY32);
 	int count = 0;
@@ -212,7 +214,6 @@ initializeConfiguration(void)
 #if defined(_WIN32) && defined(NDEBUG)
 
 #include <strsafe.h>
-#include <afxwin.h>
 #include <shellapi.h>
 
 #ifdef _UNICODE
