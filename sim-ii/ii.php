@@ -588,6 +588,13 @@ console.log(controls['awRR'].increment);
 			<p>Waiting for video recording to start&hellip;</p>
 		</div>
 
+		<!-- Video recording stop overlay — shown while OBS finishes writing the file -->
+		<div id="video-stop-overlay">
+			<div class="video-wait-spinner"></div>
+			<p>Stopping video recording&hellip;</p>
+			<p class="video-stop-sub">Please wait until recording has finished before beginning debriefing.</p>
+		</div>
+
 		</div> <!-- sitewrapper -->
 		
 		<!-- Modal -->

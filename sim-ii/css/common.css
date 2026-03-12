@@ -738,3 +738,35 @@ ul#main-nav li.logout.manual-breath {
 	margin: 0;
 	text-align: center;
 }
+
+/* ── Video recording stop overlay ────────────────────────────────────────────
+   Shown while OBS finishes flushing and closing the recording file.
+   Reuses the same spinner animation defined above. */
+#video-stop-overlay {
+	display: none;
+	position: fixed;
+	top: 0; left: 0;
+	width: 100%; height: 100%;
+	background: rgba(0, 0, 0, 0.72);
+	z-index: 9999;
+	align-items: center;
+	justify-content: center;
+	flex-direction: column;
+	gap: 20px;
+}
+#video-stop-overlay.visible {
+	display: flex;
+}
+#video-stop-overlay p {
+	color: #ffffff;
+	font-family: Arial, sans-serif;
+	font-size: 18px;
+	font-weight: bold;
+	margin: 0;
+	text-align: center;
+}
+#video-stop-overlay p.video-stop-sub {
+	font-size: 14px;
+	font-weight: normal;
+	color: rgba(255, 255, 255, 0.75);
+}

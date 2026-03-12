@@ -323,6 +323,15 @@ function startBinary() {
     const line = chunk.toString().trim();
     console.log('[sim]', line);
     if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('sim-log', line);
+
+    // When the scenario subprocess fully exits, write a flag file into simlogs/
+    // so the PHP overlay can detect this event by polling an AJAX endpoint.
+    // This is more accurate than watching the scenario state in the REST API,
+    // which transitions to "Stopped" before the scenario process actually exits.
+    if (line.includes('Scenario process is exiting')) {
+      const flagPath = path.join(getHtmlPath(), 'simlogs', 'scenario_exited.flag');
+      try { fs.writeFileSync(flagPath, String(Date.now())); } catch { /* ignore */ }
+    }
   });
 
   simProcess.stderr.on('data', (chunk) => console.error('[sim:err]', chunk.toString().trim()));

@@ -141,11 +141,18 @@ console.log("Current Scenario State: " + this.currentScenarioState);
 		$('.profile-display.scenario img').show();
 		return;
 	},
-	// Hide the video-wait overlay and clean up any pending timers/intervals.
+	// Hide the video-wait (start) overlay and clean up any pending timers/intervals.
 	_hideVideoOverlay: function() {
 		clearTimeout(scenario._videoOverlayTimer);
 		clearInterval(scenario._videoCheckInterval);
 		$('#video-wait-overlay').removeClass('visible');
+	},
+
+	// Hide the video-stop overlay and clean up its polling interval + fallback timer.
+	_hideVideoStopOverlay: function() {
+		clearInterval(scenario._videoStopCheckInterval);
+		clearTimeout(scenario._videoStopOverlayTimer);
+		$('#video-stop-overlay').removeClass('visible');
 	},
 
 	recordStartStop: function(start) {
@@ -178,6 +185,33 @@ console.log("Current Scenario State: " + this.currentScenarioState);
 				scenario._videoOverlayTimer = setTimeout(function() {
 					scenario._hideVideoOverlay();
 				}, 20000);
+
+			} else {
+				// Show stop overlay immediately when the stop command is issued.
+				$('#video-stop-overlay').addClass('visible');
+				var stoppedAt = Math.floor(Date.now() / 1000);
+
+				// Poll every 500 ms for the flag file that Electron writes when
+				// the C++ binary prints "Scenario process is exiting".
+				// This is the exact moment the scenario is fully wound down.
+				scenario._videoStopCheckInterval = setInterval(function() {
+					$.ajax({
+						url: BROWSER_AJAX + 'ajaxCheckScenarioExited.php',
+						type: 'post',
+						data: { since: stoppedAt },
+						dataType: 'json',
+						success: function(response) {
+							if (response.exited) {
+								scenario._hideVideoStopOverlay();
+							}
+						}
+					});
+				}, 500);
+
+				// Safety fallback: give up waiting after 30 s.
+				scenario._videoStopOverlayTimer = setTimeout(function() {
+					scenario._hideVideoStopOverlay();
+				}, 30000);
 			}
 
 			setTimeout(function() {
