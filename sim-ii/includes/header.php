@@ -65,7 +65,8 @@ See gpl.html
 		}
 ?>
 		<script src="scripts/hotkeys.js"></script>
-		<script type="text/javascript" src="scripts/obs-websocket.js"></script>
+		<script type="text/javascript" src="scripts/obs-websocket-5.js"></script>
+		<script type="text/javascript" src="scripts/jquery-ui-touch.js"></script>
 <?php
 		if(MOBILIZED ) {
 //			echo '<script src="scripts/jquery.mobile.custom.min.js"></script>';

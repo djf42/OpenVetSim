@@ -307,3 +307,15 @@ img.telesim-repeat {
 	}
 
 
+
+/* ── Touch screen support for jQuery UI sliders ──────────────────────────────
+   Without touch-action: none the browser intercepts finger drags on the
+   slider track/handle to scroll or zoom the page, and the touch events never
+   reach the jquery-ui-touch.js shim that converts them to mouse events. */
+.ui-slider,
+.ui-slider-handle,
+.ui-slider-range {
+    touch-action: none;
+    user-select: none;        /* prevent text selection during drag */
+    -webkit-user-select: none;
+}

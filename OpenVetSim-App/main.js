@@ -57,30 +57,82 @@ function getHtmlPath() {
   return path.join(__dirname, '..');
 }
 
-// ─── Sync bundled content to Application Support (macOS packaged only) ────────
+// ─── Windows read-only attribute helper ──────────────────────────────────────
+// The NSIS xcopy runs as admin and may copy FILE_ATTRIBUTE_READONLY from the
+// bundle resources to ProgramData.  A non-admin Electron process then can't
+// delete or overwrite those files (EPERM).  Walk the tree and clear the flag
+// before any rm/cp so subsequent writes succeed.
+async function stripReadOnly(dirPath) {
+  if (process.platform !== 'win32') return;
+  let entries;
+  try { entries = await fs.promises.readdir(dirPath, { withFileTypes: true }); }
+  catch { return; }   // directory doesn't exist yet — nothing to do
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      await stripReadOnly(full);
+    } else {
+      try {
+        const st = await fs.promises.stat(full);
+        if (!(st.mode & 0o200)) {            // write bit not set → read-only
+          await fs.promises.chmod(full, st.mode | 0o222);
+        }
+      } catch { /* best-effort; leave file alone if we can't stat/chmod it */ }
+    }
+  }
+}
+
+// ─── Sync bundled content to user/shared data directory (all platforms) ───────
 // Called once on every launch before the binary starts.
 //
 //   Web app dirs (sim-ii etc.) — always overwritten so they stay current when
-//     the app is updated via a new DMG install.
+//     the app is updated via a new DMG/installer.
 //   scenarios/                 — copied only if absent, so user-added scenarios
 //     are never clobbered by an app update.
 //   simlogs/video/             — created if missing; never touched otherwise.
 //
+// macOS:   ~/Library/Application Support/OpenVetSim/
+// Windows: C:\ProgramData\OpenVetSim\  (the NSIS installer also xcopy's these
+//          files there, but we do it here too so launches always succeed even
+//          if the installer's xcopy failed silently on a particular machine).
+//
 const WEB_DIRS = ['sim-ii', 'sim-mgr', 'sim-ctl', 'sim-player'];
 
-function initUserData() {
-  if (!app.isPackaged || process.platform !== 'darwin') return;
+async function initUserData() {
+  if (!app.isPackaged) return;
 
-  const userDir = getHtmlPath();                // ~/Library/Application Support/OpenVetSim
-  const bundleDir = process.resourcesPath;      // Contents/Resources
+  const userDir   = getHtmlPath();        // platform-specific data root
+  const bundleDir = process.resourcesPath; // Contents/Resources (Mac) or resources/ (Win)
 
-  // Always refresh PHP web app files so app updates take effect immediately
+  // Ensure the data root exists (the NSIS installer creates it on Windows, but
+  // this acts as a safety net for edge cases where the installer step failed).
+  await fs.promises.mkdir(userDir, { recursive: true });
+
+  // Always refresh PHP web app files so app updates take effect immediately.
+  // Use async fs ops so the main process stays responsive while files are copied.
   for (const dir of WEB_DIRS) {
     const src  = path.join(bundleDir, dir);
     const dest = path.join(userDir, dir);
-    if (fs.existsSync(src)) {
-      fs.rmSync(dest, { recursive: true, force: true });
-      fs.cpSync(src, dest, { recursive: true });
+    if (!fs.existsSync(src)) continue;   // not bundled for this build, skip
+
+    // Clear any read-only attributes on existing destination files before we
+    // attempt deletion — NSIS xcopy (admin) can preserve FILE_ATTRIBUTE_READONLY
+    // from bundle resources, causing EPERM for subsequent non-admin rm/cp.
+    await stripReadOnly(dest);
+
+    // Remove old copy first so stale files from previous versions are cleaned up.
+    try {
+      await fs.promises.rm(dest, { recursive: true, force: true });
+    } catch (e) {
+      console.warn(`[initUserData] rm ${dir}: ${e.message}`);
+    }
+
+    // Copy fresh from the bundle.  Wrapped per-directory so one failure doesn't
+    // abort the remaining dirs.
+    try {
+      await fs.promises.cp(src, dest, { recursive: true });
+    } catch (e) {
+      console.warn(`[initUserData] cp ${dir}: ${e.message}`);
     }
   }
 
@@ -88,24 +140,25 @@ function initUserData() {
   const scenariosSrc  = path.join(bundleDir, 'scenarios');
   const scenariosDest = path.join(userDir, 'scenarios');
   if (fs.existsSync(scenariosSrc) && !fs.existsSync(scenariosDest)) {
-    fs.cpSync(scenariosSrc, scenariosDest, { recursive: true });
+    await fs.promises.cp(scenariosSrc, scenariosDest, { recursive: true });
   }
 
   // Ensure writable log directories exist
-  fs.mkdirSync(path.join(userDir, 'simlogs', 'video'), { recursive: true });
+  await fs.promises.mkdir(path.join(userDir, 'simlogs', 'video'), { recursive: true });
 
-  // Create a Desktop shortcut (symlink) to the scenarios folder so users can
-  // find it easily. Use lstatSync (not existsSync) so we detect the symlink
-  // itself rather than its target — avoids recreating a shortcut the user moved.
-  const desktopLink = path.join(app.getPath('desktop'), 'OpenVetSim Scenarios');
-  try {
-    fs.lstatSync(desktopLink);   // throws if nothing exists at this path
-  } catch (e) {
-    // Nothing there — create the symlink
+  // Create a Desktop symlink to the scenarios folder (macOS only).
+  // On Windows the NSIS installer already places a .lnk shortcut on the desktop.
+  if (process.platform === 'darwin') {
+    const desktopLink = path.join(app.getPath('desktop'), 'OpenVetSim Scenarios');
     try {
-      fs.symlinkSync(scenariosDest, desktopLink);
-    } catch (symlinkErr) {
-      console.warn('Could not create Desktop shortcut:', symlinkErr.message);
+      fs.lstatSync(desktopLink);   // throws if nothing exists at this path
+    } catch (e) {
+      // Nothing there — create the symlink
+      try {
+        fs.symlinkSync(scenariosDest, desktopLink);
+      } catch (symlinkErr) {
+        console.warn('Could not create Desktop shortcut:', symlinkErr.message);
+      }
     }
   }
 }
@@ -233,6 +286,27 @@ function startBinary() {
       dialog.showErrorBox('OpenVetSim — Binary Missing', msg);
       return;
     }
+
+    // ── Windows registry fix ────────────────────────────────────────────────
+    // The C++ binary (keys.cpp / readSubKeys) reads HTML_Path from the registry
+    // and overwrites localConfig.html_path, which overrides the correct
+    // OPENVETSIM_HTML_PATH env var we inject below.  A stale registry entry
+    // from a previous WinVetSim installation causes PHP to use the wrong
+    // working directory (and fail to find sim-ii/router.php).
+    //
+    // Fix: write the correct path into the registry BEFORE spawning the binary
+    // so that if keys.cpp does read it, it finds the right value.
+    // This is a belt-and-suspenders measure; the proper fix is in keys.cpp.
+    if (process.platform === 'win32' && app.isPackaged) {
+      try {
+        const htmlPath = getHtmlPath();
+        execSync(
+          `reg add "HKCU\\SOFTWARE\\WinVetSim" /v HTML_Path /t REG_SZ /d "${htmlPath}" /f`,
+          { stdio: 'ignore', windowsHide: true }
+        );
+      } catch { /* ignore — registry write failure is non-fatal */ }
+    }
+    // ── end registry fix ────────────────────────────────────────────────────
 
   simProcess = spawn(binPath, [], {
     cwd:          path.dirname(binPath),
@@ -466,10 +540,20 @@ ipcMain.handle('sim-status', () => new Promise((resolve) => {
 }));
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
-app.whenReady().then(() => {
-  initUserData();  // sync bundled web files → Application Support (macOS only)
+app.whenReady().then(async () => {
+  // Open the window immediately so the user sees the loading screen right away.
   createWindow();
-  startBinary();   // auto-start on launch
+
+  // Copy bundled web files to the writable data directory (both platforms).
+  // This is async so the window stays responsive during the copy, and any
+  // errors are caught so a bad copy never prevents the window from appearing.
+  try {
+    await initUserData();
+  } catch (err) {
+    console.error('[initUserData] error (non-fatal):', err.message);
+  }
+
+  startBinary();   // auto-start; web files are now in place
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

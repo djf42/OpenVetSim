@@ -11,7 +11,7 @@ sim-ii: Copyright (C) 2019  VetSim, Cornell University College of Veterinary Med
 See gpl.html -->
 		<title>OBS Control</title>
 		<script type="text/javascript" src="scripts/jquery/2.2.1/jquery.min.js"></script>
-		<script type="text/javascript" src="scripts/obs-websocket.js"></script>
+		<script type="text/javascript" src="scripts/obs-websocket-5.js"></script>
 		
 <script>
 function GetURLParameter(sParam)
@@ -28,8 +28,6 @@ function GetURLParameter(sParam)
     }
 };
 
-//const OBSWebSocket = require('obs-websocket-js');
-
 const obs = new OBSWebSocket();
 
 $(document).ready(function() {
@@ -37,31 +35,29 @@ $(document).ready(function() {
 	
 	$("#cmd").append("command is "+cmd );
 
-	obs.connect().then(
+	obs.connect('ws://localhost:4455').then(
 		function (){		
 			$("#reply").append("ConnectOK\n " );	
 			if ( cmd == 'start' )
 			{
-				obs.send('StartRecording').then(
-					function(){$("#reply").append("Sent Start\n " );},
-					function(result){$("#reply").append("Start Failed\n " ); console.log(result);} );
+				obs.call('StartRecord').then(
+					function(){$("#reply").append("Sent Start\n " ); obs.disconnect();},
+					function(result){$("#reply").append("Start Failed\n " ); console.log(result); obs.disconnect();} );
 			}
 			else if ( cmd == 'stop' )
 			{
-				obs.send('StopRecording').then(
-					function(){$("#reply").append("Sent Stop\n " );},
-					function(result){$("#reply").append("Stop Failed\n " ); console.log(result);} );
+				obs.call('StopRecord').then(
+					function(){$("#reply").append("Sent Stop\n " ); obs.disconnect();},
+					function(result){$("#reply").append("Stop Failed\n " ); console.log(result); obs.disconnect();} );
 			}
-			obs.disconnect();
 		},
 		function (result){
 			$("#reply").append("ConnectFailed\n " );
 			console.log(result);
 		})
-	.catch()
-	{
+	.catch(function(){
 		//$("#reply").append("Connect Error\n " );
-	};
+	});
 
 });
 

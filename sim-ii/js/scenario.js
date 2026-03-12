@@ -183,24 +183,20 @@ console.log("Current Scenario State: " + this.currentScenarioState);
 			setTimeout(function() {
 				var cmd;
 				if ( start )
-					cmd = 'StartRecording';
+					cmd = 'StartRecord';
 				else
-					cmd = 'StopRecording';
+					cmd = 'StopRecord';
 				var obs = new OBSWebSocket();
-				obs.connect().then(
+				obs.connect('ws://localhost:4455').then(
 				function (){
-					obs.send(cmd).then(
-						function(){console.log("Recording Started");},
-						function(result){console.log("Recording Start Failed");} );
-					obs.disconnect();
+					obs.call(cmd).then(
+						function(){console.log("Recording Started"); obs.disconnect();},
+						function(result){console.log("Recording Start Failed"); obs.disconnect();} );
 				},
 				function (result){
-					console.log("obs.send failed", result);
+					console.log("obs.connect failed", result);
 				})
-				.catch()
-				{
-					//console.log("obs.connect failed",  result);
-				};
+				.catch(function(){});
 			}, 3000 );
 		}
 	},

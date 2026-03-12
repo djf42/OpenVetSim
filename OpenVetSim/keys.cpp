@@ -217,7 +217,17 @@ readSubKeys(void)
 		Ret = writeStringInRegistry(whichKey, L"SOFTWARE\\WinVetSim", "HTML_Path", localConfig.html_path, len);
 	}
 	else if (Ret == ERROR_SUCCESS)
-		sprintf_s(localConfig.html_path, sizeof(localConfig.html_path), "%s", stringBuf);
+	{
+		// Only honour the registry HTML_Path if the Electron launcher did NOT
+		// inject OPENVETSIM_HTML_PATH.  A stale registry entry from a previous
+		// WinVetSim installation must not override the launcher-provided path.
+		char* envPath = nullptr;
+		size_t envLen = 0;
+		bool hasEnvPath = (_dupenv_s(&envPath, &envLen, "OPENVETSIM_HTML_PATH") == 0 && envPath != nullptr);
+		if (envPath) free(envPath);
+		if (!hasEnvPath)
+			sprintf_s(localConfig.html_path, sizeof(localConfig.html_path), "%s", stringBuf);
+	}
 }
 
 #endif  // _WIN32
