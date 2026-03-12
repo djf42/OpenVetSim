@@ -2,9 +2,12 @@
 # ============================================================================
 # download-php.sh
 #
-# Downloads a self-contained static PHP 8.3 CLI binary for macOS and places
-# it in OpenVetSim/build/bin/PHP8.0/ where the simulation engine looks first
-# when searching for PHP (see WebSrv.cpp findPhpPath()).
+# Downloads static PHP 8.3 CLI binaries for BOTH macOS arm64 and x86_64,
+# then combines them into a single universal (fat) binary using lipo.
+#
+# This is required for building a universal DMG with electron-builder --universal,
+# which uses @electron/universal to merge the two arch builds. That tool rejects
+# single-arch binaries that appear identically in both builds.
 #
 # Uses pre-built static binaries from the static-php-cli project CDN:
 #   https://dl.static-php.dev/static-php-cli/common/
@@ -30,95 +33,103 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEST="$REPO_ROOT/OpenVetSim/build/bin/PHP8.0"
 
-ARCH="$(uname -m)"
-
-case "$ARCH" in
-  arm64)   SPC_ARCH="aarch64" ;;
-  x86_64)  SPC_ARCH="x86_64"  ;;
-  *)
-    echo "ERROR: Unsupported architecture: $ARCH" >&2
-    exit 1
-    ;;
-esac
-
 PHP_MINOR="8.3"
 CANDIDATES=(17 16 15 14 13)
 BASE_URL="https://dl.static-php.dev/static-php-cli/common"
 
-echo "Looking for PHP ${PHP_MINOR}.x CLI binary for macOS ${ARCH}..."
-echo "(If this hangs, you may be on a network that blocks the CDN — try a VPN or home network)"
-echo ""
-
-FOUND_URL=""
-FOUND_VERSION=""
-FOUND_ASSET=""
-for PATCH in "${CANDIDATES[@]}"; do
-  VERSION="${PHP_MINOR}.${PATCH}"
-  ASSET="php-${VERSION}-cli-macos-${SPC_ARCH}.tar.gz"
-  URL="${BASE_URL}/${ASSET}"
-  printf "  Trying %s ... " "$VERSION"
-  HTTP_CODE="$(curl -o /dev/null -w "%{http_code}" \
-    --silent --head --location \
-    --connect-timeout 8 --max-time 10 \
-    "$URL" 2>/dev/null || echo "000")"
-  if [ "$HTTP_CODE" = "200" ]; then
-    echo "found!"
-    FOUND_URL="$URL"
-    FOUND_VERSION="$VERSION"
-    FOUND_ASSET="$ASSET"
-    break
-  else
-    echo "not available (HTTP $HTTP_CODE)"
-  fi
-done
-
-if [ -z "$FOUND_URL" ]; then
-  echo ""
-  echo "ERROR: Could not reach the PHP CDN." >&2
+# ---------------------------------------------------------------------------
+# find_version <spc_arch> — probes the CDN and echos the first available
+# version string (to stdout only), with progress to stderr.
+# ---------------------------------------------------------------------------
+find_version() {
+  local SPC_ARCH="$1"
+  for PATCH in "${CANDIDATES[@]}"; do
+    local VERSION="${PHP_MINOR}.${PATCH}"
+    local ASSET="php-${VERSION}-cli-macos-${SPC_ARCH}.tar.gz"
+    local URL="${BASE_URL}/${ASSET}"
+    printf "  Trying %s (%s) ... " "$VERSION" "$SPC_ARCH" >&2
+    HTTP_CODE="$(curl -o /dev/null -w "%{http_code}" \
+      --silent --head --location \
+      --connect-timeout 8 --max-time 10 \
+      "$URL" 2>/dev/null || echo "000")"
+    if [ "$HTTP_CODE" = "200" ]; then
+      echo "found!" >&2
+      echo "$VERSION"   # only this goes to stdout (captured by caller)
+      return 0
+    else
+      echo "not available (HTTP $HTTP_CODE)" >&2
+    fi
+  done
+  echo "" >&2
+  echo "ERROR: Could not find a PHP binary for arch: $SPC_ARCH" >&2
   echo "       If you are on a university/corporate network, try running this" >&2
   echo "       script from a home network, phone hotspot, or VPN." >&2
   exit 1
-fi
+}
+
+# ---------------------------------------------------------------------------
+# download_php <spc_arch> <version> <dest_file>
+# ---------------------------------------------------------------------------
+download_php() {
+  local SPC_ARCH="$1"
+  local VERSION="$2"
+  local OUT="$3"
+  local ASSET="php-${VERSION}-cli-macos-${SPC_ARCH}.tar.gz"
+  local URL="${BASE_URL}/${ASSET}"
+  local TMP
+  TMP="$(mktemp -d)"
+
+  echo "Downloading PHP ${VERSION} for macos-${SPC_ARCH}..."
+  curl -fL --progress-bar "$URL" -o "$TMP/$ASSET"
+  echo ""
+
+  tar -xzf "$TMP/$ASSET" -C "$TMP"
+  PHP_BIN="$(find "$TMP" -type f -name "php" | head -1)"
+  if [ -z "$PHP_BIN" ]; then
+    echo "ERROR: could not find 'php' binary in archive for ${SPC_ARCH}." >&2
+    exit 1
+  fi
+  chmod +x "$PHP_BIN"
+  cp "$PHP_BIN" "$OUT"
+  rm -rf "$TMP"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+echo "Building a universal (arm64 + x86_64) PHP ${PHP_MINOR}.x binary for macOS..."
+echo "(If this hangs, you may be on a network that blocks the CDN — try a VPN or home network)"
+echo ""
+
+echo "Probing for arm64 build..."
+ARM64_VERSION="$(find_version aarch64)"
 
 echo ""
-echo "Downloading PHP ${FOUND_VERSION} for macOS ${ARCH}..."
-echo "  Source : $FOUND_URL"
-echo "  Dest   : $DEST"
+echo "Probing for x86_64 build..."
+X64_VERSION="$(find_version x86_64)"
+
 echo ""
 
 rm -rf "$DEST"
 mkdir -p "$DEST"
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+TMP_ARM64="$(mktemp)"
+TMP_X64="$(mktemp)"
+trap 'rm -f "$TMP_ARM64" "$TMP_X64"' EXIT
 
-curl -fL --progress-bar "$FOUND_URL" -o "$TMP/$FOUND_ASSET"
+download_php "aarch64" "$ARM64_VERSION" "$TMP_ARM64"
+download_php "x86_64"  "$X64_VERSION"  "$TMP_X64"
 
-echo ""
-echo "Archive contents:"
-tar -tzf "$TMP/$FOUND_ASSET"
-echo ""
-
-tar -xzf "$TMP/$FOUND_ASSET" -C "$DEST"
-
-# Find the php binary
-PHP_BIN="$(find "$DEST" -type f -name "php" | head -1)"
-if [ -z "$PHP_BIN" ]; then
-  echo "ERROR: could not find 'php' binary after extraction." >&2
-  find "$DEST" >&2
-  exit 1
-fi
-
-chmod +x "$PHP_BIN"
-
-# If the binary isn't directly at $DEST/php, symlink it there
-if [ "$PHP_BIN" != "$DEST/php" ]; then
-  ln -sf "$PHP_BIN" "$DEST/php"
-  echo "Linked $DEST/php → $PHP_BIN"
-fi
+echo "Creating universal binary with lipo..."
+lipo -create "$TMP_ARM64" "$TMP_X64" -output "$DEST/php"
+chmod +x "$DEST/php"
 
 echo ""
-echo "Done. PHP is ready at:"
+echo "Verifying universal binary:"
+lipo -info "$DEST/php"
+
+echo ""
+echo "Done. Universal PHP is ready at:"
 echo "  $DEST/php"
 echo ""
 echo "Verify with:"
