@@ -495,6 +495,11 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' },
+        {
+          label: 'Toggle PHP DevTools',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: () => { if (phpView) phpView.webContents.toggleDevTools(); },
+        },
         { type: 'separator' },
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
         { type: 'separator' },

@@ -888,7 +888,11 @@ See gpl.html
 //			} else if (controls.heartRhythm.pea == true) {
 //				y = 0;
 			} else if(simmgr.respResponse.rate == 0) {
-				chart.resp.rhythmIndex = 'low';	// start pattern with pattern low...start of inhalation
+				// Reset to rest state so no phantom waveform fires when rate goes
+				// non-zero via full-status poll -- a real breath/synch is required to start drawing
+				chart.resp.rhythmIndex = 'rest';
+				chart.resp.length = chart.resp.rhythm['rest'].length - 1;
+				chart.resp.patternIndex = 0;
 				y = 0;
 			} else if ( ( profile.isVitalsMonitor == false ) || ( controls.CO2.leadsConnected == true ) ) {
 				if(chart.status.resp.synch == true ) {	// Restart Cycle

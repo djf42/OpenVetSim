@@ -358,7 +358,9 @@ resetTimer(int rate, int isCardiac, int isFib)
 	{
 		breathInterval = wait_time_msec;
 		remaining = nextBreathTime - now;
-		if (remaining > (now + pulseInterval))
+		// If the next scheduled breath is further away than one full new interval,
+		// reschedule it so the rate ramp-up is reflected in actual breathing timing.
+		if (remaining > wait_time_msec)
 		{
 			nextBreathTime = now + wait_time_msec;
 		}
@@ -399,16 +401,26 @@ set_pulse_rate(int bpm)
 	}
 }
 
-// restart_breath_timer is called when a manual respiration is flagged. 
+// restart_breath_timer is called when a manual respiration is flagged.
 void
 restart_breath_timer(void)
 {
 	ULONGLONG now = simmgr_shm->server.msec_time;
 	ULONGLONG wait_time_msec;
 
+	// When rate is 0, getWaitTimeMsec would divide by zero (producing +inf or 0),
+	// corrupting breathInterval and nextBreathTime.  Mirror set_breath_rate(0) behaviour
+	// and push the timer far into the future instead.
+	if (simmgr_shm->status.respiration.rate == 0)
+	{
+		breathInterval = 60000;
+		nextBreathTime = now + 3600000ULL;	// 1 hour away
+		return;
+	}
+
 	wait_time_msec = getWaitTimeMsec(simmgr_shm->status.respiration.rate, 0, 0);
 	breathInterval = wait_time_msec;
-	
+
 	// For very slow cycles (less than 15 BPM), set initial timer to half the cycle plus add 0.1 seconds.
 	if (simmgr_shm->status.respiration.rate < 15)
 	{
@@ -425,7 +437,16 @@ set_breath_rate(int bpm)
 {
 	if (bpm == 0)
 	{
-		bpm = 60;
+		// When rate is 0 (apnea / arrest), push nextBreathTime far into the future
+		// instead of keeping a 60 bpm placeholder timer running.  The placeholder
+		// caused a spurious breath the instant rate became non-zero, because
+		// nextBreathTime was always only ~1 second away and would fire before
+		// pulseProcessChild could reschedule it.  With nextBreathTime an hour out,
+		// the timer cannot accidentally fire during the 0->positive rate transition.
+		// breathInterval is set to 60 s so any stray reads get a sane value.
+		breathInterval = 60000;
+		nextBreathTime = simmgr_shm->server.msec_time + 3600000ULL;	// 1 hour away
+		return;
 	}
 
 	resetTimer(bpm, NOT_CARDIAC, 0 );
@@ -835,6 +856,10 @@ pulseBroadcastLoop(void)
 		{
 			last_manual_breath = simmgr_shm->status.respiration.manual_count;
 			simmgr_shm->status.respiration.breathCount++;
+			printf("[BREATH-MANUAL] pulseBroadcastLoop manual_count change: breathCount=%u rate=%d manual_count=%u\n",
+				simmgr_shm->status.respiration.breathCount,
+				simmgr_shm->status.respiration.rate,
+				simmgr_shm->status.respiration.manual_count);
 		}
 		if (last_breath != simmgr_shm->status.respiration.breathCount)
 		{
@@ -920,9 +945,26 @@ pulseProcessChild(void)
 		// If the breath rate has changed, then reset the timer
 		if (currentBreathRate != simmgr_shm->status.respiration.rate)
 		{
+			int prevBreathRate = currentBreathRate;
 			breathSema.lock();
 			set_breath_rate(simmgr_shm->status.respiration.rate);
 			currentBreathRate = simmgr_shm->status.respiration.rate;
+			// When starting from a stopped state (rate 0), the placeholder 60 bpm timer
+			// would fire almost immediately as the first "real" breath.  Reschedule
+			// nextBreathTime to one full interval from now so the first breath arrives
+			// at the correct spacing rather than firing spuriously right away.
+			if (prevBreathRate == 0 && currentBreathRate > 0)
+			{
+				// Delay the first breath long enough that the rate has ramped to a
+				// "visible" level so the waveform doesn't appear as a tiny spike.
+				// At a typical 0.9 bpm/s ramp, rate~8 is reached ~9 seconds after the
+				// rate first goes non-zero, giving ~28% ETCO2 amplitude and a natural
+				// waveform shape.  breathInterval/7 (~8.6 s at rate=1 / 60s interval)
+				// scales reasonably with different ramp speeds.
+				// Fix-1 (resetTimer) will NOT pull this in because the remaining time
+				// stays well below breathInterval for the entire wait.
+				nextBreathTime = simmgr_shm->server.msec_time + (breathInterval / 7);
+			}
 			breathSema.unlock();
 
 			// awRR Calculation - TBD - Need real calculations
