@@ -94,14 +94,54 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	} else {
 		define("HOST_PROTOCOL", "//");
 	}
+
+	/*
+	 * VS_BROWSER_HOST - the address the BROWSER should use to reach this machine.
+	 *
+	 * Do NOT build browser-facing URLs from $_SERVER['SERVER_NAME'].  PHP is
+	 * launched as "php -S 0.0.0.0:8081" so that phones on the LAN can reach
+	 * sim-remote, and the built-in server reports that bind address verbatim as
+	 * SERVER_NAME.  "0.0.0.0" means "all interfaces" when binding, but it is not
+	 * a reachable destination -- a browser asked to fetch http://0.0.0.0:40845/
+	 * simply fails, which is what breaks the interface elements.
+	 *
+	 * HTTP_HOST is whatever the client actually used to get here: 127.0.0.1 for
+	 * the Electron window, or the machine's LAN IP for a phone running
+	 * sim-remote.  That is precisely the address that same client can use for a
+	 * second connection, so it is correct for both cases.
+	 */
+	$vsHost = "";
+	if ( array_key_exists("HTTP_HOST", $_SERVER) )
+	{
+		$vsHost = $_SERVER["HTTP_HOST"];
+		// Strip the port.  IPv6 literals arrive bracketed, e.g. "[::1]:8081".
+		if ( substr($vsHost, 0, 1) === "[" )
+		{
+			$close = strpos($vsHost, "]");
+			if ( $close !== false )
+			{
+				$vsHost = substr($vsHost, 0, $close + 1);
+			}
+		}
+		else if ( strrpos($vsHost, ":") !== false )
+		{
+			$vsHost = substr($vsHost, 0, strrpos($vsHost, ":"));
+		}
+	}
+	if ( $vsHost === "" || $vsHost === "0.0.0.0" )
+	{
+		$vsHost = "127.0.0.1";
+	}
+	define("VS_BROWSER_HOST", $vsHost);
+
 	if ( $_SERVER['SERVER_PORT'] != 80 )
 	{
-		define("SERVER_FULL", $_SERVER["SERVER_NAME"] . ":" . $_SERVER['SERVER_PORT'] );
+		define("SERVER_FULL", VS_BROWSER_HOST . ":" . $_SERVER['SERVER_PORT'] );
 	}
 	else
 	{
-		define("SERVER_FULL", $_SERVER["SERVER_NAME"] );
-	
+		define("SERVER_FULL", VS_BROWSER_HOST );
+
 	}
 //	define("BROWSER_HTML", SERVER_FULL . DIR_SEP .  $top_dir . DIR_SEP);
 //	define("BROWSER_HTML", $_SERVER["HTTP_HOST"].DIR_SEP);
@@ -112,7 +152,9 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	
 	if($noDB)
 	{
-		define("BROWSER_CGI", "http://" . $_SERVER["SERVER_NAME"] . ":40845" . DIR_SEP);
+		// Was $_SERVER["SERVER_NAME"], which is the 0.0.0.0 bind address and
+		// produced unreachable URLs like http://0.0.0.0:40845/ in the browser.
+		define("BROWSER_CGI", "http://" . VS_BROWSER_HOST . ":40845" . DIR_SEP);
 	}
 	else
 	{
@@ -131,14 +173,30 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	define("BROWSER_AJAX", BROWSER_ROOT . "ajax" . DIR_SEP);
 	define("BROWSER_SCRIPTS", BROWSER_ROOT . "js" . DIR_SEP);
 	
+	/*
+	 * SERVER_ADDR is compared against REMOTE_ADDR by simmgr.isLocalDisplay(),
+	 * which decides the status poll rate and whether the browser runs its own
+	 * fallback beat timer.  With "php -S 0.0.0.0:8081" both SERVER_ADDR and
+	 * SERVER_NAME report "0.0.0.0", which never equals REMOTE_ADDR -- so the
+	 * Electron window was being treated as a remote client.  Fall back to the
+	 * host the client actually connected to, which makes the comparison
+	 * meaningful again: 127.0.0.1 == 127.0.0.1 for the local window, and a
+	 * phone's LAN address correctly does not match.
+	 */
+	$vsServerAddr = "";
 	if ( array_key_exists("SERVER_ADDR", $_SERVER ) )
 	{
-		define("SERVER_ADDR", $_SERVER['SERVER_ADDR'] );
+		$vsServerAddr = $_SERVER['SERVER_ADDR'];
 	}
 	else if ( array_key_exists("SERVER_NAME", $_SERVER ) )
 	{
-		define("SERVER_ADDR", $_SERVER['SERVER_NAME'] );
+		$vsServerAddr = $_SERVER['SERVER_NAME'];
 	}
+	if ( $vsServerAddr === "" || $vsServerAddr === "0.0.0.0" )
+	{
+		$vsServerAddr = VS_BROWSER_HOST;
+	}
+	define("SERVER_ADDR", $vsServerAddr );
 	define("REMOTE_ADDR", $_SERVER['REMOTE_ADDR'] );
 	
 	// Default DB select

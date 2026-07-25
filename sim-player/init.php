@@ -92,14 +92,48 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 		define("HOST_PROTOCOL", "//");
 		define("PROTOCOL", "http");
 	}
+	/*
+	 * VS_BROWSER_HOST - the address the BROWSER should use to reach this machine.
+	 *
+	 * Not $_SERVER['SERVER_NAME']: PHP runs as "php -S 0.0.0.0:8081" so phones
+	 * can reach sim-remote, and the built-in server reports that bind address
+	 * verbatim.  "0.0.0.0" is valid to bind to but is not a reachable
+	 * destination, so URLs built from it (BROWSER_ROOT_FULL below, used for
+	 * video playback) fail in the browser.  HTTP_HOST is whatever the client
+	 * actually used to get here, which is what it can reuse.
+	 */
+	$vsHost = "";
+	if ( array_key_exists("HTTP_HOST", $_SERVER) )
+	{
+		$vsHost = $_SERVER["HTTP_HOST"];
+		// Strip the port.  IPv6 literals arrive bracketed, e.g. "[::1]:8081".
+		if ( substr($vsHost, 0, 1) === "[" )
+		{
+			$close = strpos($vsHost, "]");
+			if ( $close !== false )
+			{
+				$vsHost = substr($vsHost, 0, $close + 1);
+			}
+		}
+		else if ( strrpos($vsHost, ":") !== false )
+		{
+			$vsHost = substr($vsHost, 0, strrpos($vsHost, ":"));
+		}
+	}
+	if ( $vsHost === "" || $vsHost === "0.0.0.0" )
+	{
+		$vsHost = "127.0.0.1";
+	}
+	define("VS_BROWSER_HOST", $vsHost);
+
 	if ( $_SERVER['SERVER_PORT'] != 80 )
 	{
-		define("SERVER_FULL", $_SERVER["SERVER_NAME"] . ":" . $_SERVER['SERVER_PORT'] );
+		define("SERVER_FULL", VS_BROWSER_HOST . ":" . $_SERVER['SERVER_PORT'] );
 	}
 	else
 	{
-		define("SERVER_FULL", $_SERVER["SERVER_NAME"] );
-	
+		define("SERVER_FULL", VS_BROWSER_HOST );
+
 	}
 
 //	define("BROWSER_HTML", SERVER_FULL . DIR_SEP .  $top_dir . DIR_SEP);
