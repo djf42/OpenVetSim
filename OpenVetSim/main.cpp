@@ -398,12 +398,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		swprintf_s(buffer, sizeof(buffer)/sizeof(buffer[0]),
 			L"SimMgr Version %hs\n", WVSversion);
 		TextOut(hdc, 10, 30, buffer, (int)_tcslen(buffer));
-		if (PHP_SERVER_PORT == 80)
-			swprintf_s(buffer, sizeof(buffer)/sizeof(buffer[0]),
-				L"Control URL: http://%hs/sim-ii/ii.php\n", PHP_SERVER_ADDR);
-		else
-			swprintf_s(buffer, sizeof(buffer)/sizeof(buffer[0]),
-				L"Control URL: http://%hs:%d/sim-ii/ii.php\n", PHP_SERVER_ADDR, PHP_SERVER_PORT);
+		// Display a URL the user can actually click.  PHP_SERVER_ADDR is a BIND
+		// address ("0.0.0.0" = all interfaces) and is not reachable as a
+		// destination, so show loopback instead.
+		{
+			const char* displayAddr =
+				(strcmp(PHP_SERVER_ADDR, "0.0.0.0") == 0) ? "127.0.0.1" : PHP_SERVER_ADDR;
+
+			if (PHP_SERVER_PORT == 80)
+				swprintf_s(buffer, sizeof(buffer)/sizeof(buffer[0]),
+					L"Control URL: http://%hs/sim-ii/ii.php\n", displayAddr);
+			else
+				swprintf_s(buffer, sizeof(buffer)/sizeof(buffer[0]),
+					L"Control URL: http://%hs:%d/sim-ii/ii.php\n", displayAddr, PHP_SERVER_PORT);
+		}
 		TextOut(hdc, 10, 50, buffer, (int)_tcslen(buffer));
 		EndPaint(hWnd, &ps);
 		break;

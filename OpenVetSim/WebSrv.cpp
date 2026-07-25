@@ -41,7 +41,19 @@ static int checkURL(const string& host, const string& port, const string& page);
 // ----------------------------------------------------------------
 int isServerRunning(void)
 {
-	string host = PHP_SERVER_ADDR;
+	// Health-check over loopback, NOT over PHP_SERVER_ADDR.
+	//
+	// PHP_SERVER_ADDR is a BIND address and is "0.0.0.0" so that phones on the
+	// LAN can reach sim-remote.  "0.0.0.0" means "all interfaces" when binding,
+	// but it is not a valid destination to CONNECT to: Windows rejects it with
+	// WSAEADDRNOTAVAIL.  macOS and Linux happen to treat it as loopback, which
+	// is why using it here worked there and failed on Windows with a misleading
+	// "Could not start PHP Server" -- PHP had in fact started correctly, and it
+	// was this check that could not reach it.
+	//
+	// Binding to 0.0.0.0 always includes loopback, so 127.0.0.1 is the correct
+	// and portable way to ask "is my own PHP server up?".
+	string host = "127.0.0.1";
 	string port = to_string(PHP_SERVER_PORT);
 	string page = "sim-ii/hostCheck.php";
 	return checkURL(host, port, page);
