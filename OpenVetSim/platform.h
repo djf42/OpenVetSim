@@ -119,6 +119,43 @@ inline void sim_sleep_ms(unsigned int ms) { Sleep(ms); }
 inline void sim_timer_resolution_begin(void) { timeBeginPeriod(1); }
 inline void sim_timer_resolution_end(void)   { timeEndPeriod(1); }
 
+// --- High-resolution monotonic clock ---
+//
+// Use this, NOT GetTickCount64(), for anything that schedules beats.
+//
+// GetTickCount64()'s resolution is the system timer tick -- documented as
+// 10-16 ms, in practice 15.625 ms -- and on modern Windows it does NOT follow
+// timeBeginPeriod().  Scheduling against it quantizes every beat to a 15.6 ms
+// grid, which aliases against the beat interval:
+//
+//    120 BPM: 500 ms / 15.625 = 32.0  -> exact, no visible error
+//    200 BPM: 300 ms / 15.625 = 19.2  -> slips 0.2 tick per beat, so every
+//                                        5th beat lands a full tick (~15.6 ms)
+//                                        late and the other four run short
+//
+// That is precisely the sawtooth measured at the controller: four intervals
+// near 296 ms then one near 313 ms, repeating every five beats, with the mean
+// still exactly correct.
+//
+// QueryPerformanceCounter is sub-microsecond, is unaffected by the timer
+// period, and is monotonic, so scheduling against it removes the grid entirely.
+inline ULONGLONG sim_monotonic_msec(void)
+{
+    static LARGE_INTEGER freq = { 0 };
+    LARGE_INTEGER now;
+
+    if (freq.QuadPart == 0)
+    {
+        QueryPerformanceFrequency(&freq);
+        if (freq.QuadPart == 0)
+        {
+            return GetTickCount64();   // should never happen; degrade gracefully
+        }
+    }
+    QueryPerformanceCounter(&now);
+    return (ULONGLONG)((now.QuadPart * 1000LL) / freq.QuadPart);
+}
+
 // --- sim_clock_gettime_tv: on Windows, clock_gettime already uses timeval* ---
 // (Windows clock_gettime is our custom implementation in simutil.cpp)
 #define sim_clock_gettime_tv clock_gettime
@@ -200,6 +237,18 @@ inline void sim_sleep_ms(unsigned int ms) { usleep((useconds_t)ms * 1000u); }
 // POSIX usleep() already honours sub-millisecond requests; nothing to do.
 inline void sim_timer_resolution_begin(void) {}
 inline void sim_timer_resolution_end(void)   {}
+
+// --- High-resolution monotonic clock ---
+// On POSIX the GetTickCount64() shim below already uses CLOCK_MONOTONIC, which
+// is nanosecond-resolution, so this is simply the same value.  Declared here so
+// timing code can call sim_monotonic_msec() on both platforms.  (On Windows the
+// two differ substantially -- see the comment on the Windows implementation.)
+inline uint64_t sim_monotonic_msec(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)(ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000));
+}
 
 // --- sprintf_s → snprintf ---
 // Two overloads to handle both MSVC usage forms:

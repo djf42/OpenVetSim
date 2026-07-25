@@ -441,7 +441,7 @@ resetTimer(int rate, int isCardiac, int isFib)
 {
 	ULONGLONG wait_time_msec;
 	ULONGLONG remaining;
-	ULONGLONG now = GetTickCount64();
+	ULONGLONG now = sim_monotonic_msec();
 
 	wait_time_msec = getWaitTimeMsec(rate, isCardiac, isFib);
 
@@ -507,7 +507,7 @@ set_pulse_rate(int bpm)
 void
 restart_breath_timer(void)
 {
-	ULONGLONG now = GetTickCount64();
+	ULONGLONG now = sim_monotonic_msec();
 	ULONGLONG wait_time_msec;
 
 	// When rate is 0, getWaitTimeMsec would divide by zero (producing +inf or 0),
@@ -547,7 +547,7 @@ set_breath_rate(int bpm)
 		// the timer cannot accidentally fire during the 0->positive rate transition.
 		// breathInterval is set to 60 s so any stray reads get a sane value.
 		breathInterval = 60000;
-		nextBreathTime = GetTickCount64() + 3600000ULL;	// 1 hour away
+		nextBreathTime = sim_monotonic_msec() + 3600000ULL;	// 1 hour away
 		return;
 	}
 
@@ -932,25 +932,25 @@ pulseTimer(void)
 		// be stale for 50-200 ms, causing beats to fire late.  The NEXT beat then fires at
 		// its correct absolute time, making the interval between two consecutive beats
 		// audibly short (sounds like an arrhythmia in sinus rhythm).
-		// This thread is already THREAD_PRIORITY_TIME_CRITICAL — reading GetTickCount64()
+		// This thread is already THREAD_PRIORITY_TIME_CRITICAL — reading sim_monotonic_msec()
 		// directly gives precise, independent timing with no cross-thread dependency.
-		now = GetTickCount64();
+		now = sim_monotonic_msec();
 		if (nextPulseTime <= now)
 		{
 			pulse_beat_handler();
 			nextPulseTime += pulseInterval;
-			now2 = GetTickCount64();
+			now2 = sim_monotonic_msec();
 			if (nextPulseTime <= (now2+1))
 			{
 				nextPulseTime = now2;
 			}
 		}
-		now = GetTickCount64();
+		now = sim_monotonic_msec();
 		if (nextBreathTime <= now)
 		{
 			breath_beat_handler();
 			nextBreathTime += breathInterval;
-			now2 = GetTickCount64();
+			now2 = sim_monotonic_msec();
 			if (nextBreathTime <= (now2+1))
 			{
 				nextBreathTime = now2 + breathInterval;
@@ -1037,7 +1037,7 @@ pulseBroadcastLoop(void)
 		 */
 		const ULONGLONG CONTROLLER_MSG_GAP_MS = 15;	// >> the controller's ~1 ms poll
 		static ULONGLONG lastMsgMsec = 0;
-		ULONGLONG msgNow = GetTickCount64();
+		ULONGLONG msgNow = sim_monotonic_msec();
 		int gapElapsed = ((msgNow - lastMsgMsec) >= CONTROLLER_MSG_GAP_MS);
 
 		if (last_pulse != simmgr_shm->status.cardiac.pulseCount)
@@ -1053,7 +1053,7 @@ pulseBroadcastLoop(void)
 			{
 				static ULONGLONG lastBeatMsec = 0;
 				static long long lastExpected = 0;
-				ULONGLONG beatNow = GetTickCount64();
+				ULONGLONG beatNow = sim_monotonic_msec();
 				long long expected = (long long)pulseInterval;
 				// pulseTimer runs a 10-phase counter for VPC/afib, so a delivered
 				// beat spans 10 intervals in those modes.
@@ -1096,7 +1096,7 @@ pulseBroadcastLoop(void)
 			// the rhythm is supposed to be plain sinus (vpcType == 0) that is a spurious
 			// beat landing next to a normal one.  "extra" carries vpcType, so extra=0
 			// on a pulseVPC line means VPCs were disabled.
-			beatTracePush("pulseVPC", GetTickCount64(), 0, 0, vpcType);
+			beatTracePush("pulseVPC", sim_monotonic_msec(), 0, 0, vpcType);
 		}
 		else if (gapElapsed && (last_breath != simmgr_shm->status.respiration.breathCount))
 		{
@@ -1104,7 +1104,7 @@ pulseBroadcastLoop(void)
 			lastMsgMsec = msgNow;
 			count = broadcast_word(breathWord);
 
-			beatTracePush("breath", GetTickCount64(), 0, 0, count);
+			beatTracePush("breath", sim_monotonic_msec(), 0, 0, count);
 		}
 		else if (gapElapsed && (portUpdateLoops > 5000))	// ~5 s cadence at a 1 ms poll
 		{
@@ -1206,7 +1206,7 @@ pulseProcessChild(void)
 				// scales reasonably with different ramp speeds.
 				// Fix-1 (resetTimer) will NOT pull this in because the remaining time
 				// stays well below breathInterval for the entire wait.
-				nextBreathTime = GetTickCount64() + (breathInterval / 7);
+				nextBreathTime = sim_monotonic_msec() + (breathInterval / 7);
 			}
 			breathSema.unlock();
 
