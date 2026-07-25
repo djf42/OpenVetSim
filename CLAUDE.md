@@ -155,6 +155,123 @@ npm run dist:win
 
 ## Gotchas & Hard-Won Lessons
 
+### Beat timing: never schedule against GetTickCount64() on Windows
+
+Anything that decides *when* a heartbeat or breath fires must use
+`sim_monotonic_msec()` (platform.h), which is `QueryPerformanceCounter` on
+Windows and `CLOCK_MONOTONIC` on POSIX.
+
+`GetTickCount64()` resolves only to the system timer tick — documented as
+10–16 ms, in practice **15.625 ms** — and on modern Windows it does *not*
+follow `timeBeginPeriod()`. Scheduling against it puts every beat on a 15.6 ms
+grid, which aliases against the beat interval:
+
+| Rate | Interval | Interval / 15.625 | Result |
+|------|----------|-------------------|--------|
+| 120 BPM | 500 ms | 32.000 | exact — sounds fine |
+| 240 BPM | 250 ms | 16.000 | exact — sounds fine |
+| 200 BPM | 300 ms | 19.200 | slips 0.2 tick/beat → one beat 15.6 ms late every 5 beats |
+| 150 BPM | 400 ms | 25.600 | worst case — a stumble every ~1.7 beats |
+
+The mean rate stays correct, so the monitor reads the right number while the
+rhythm audibly stumbles. This was the primary cause of the long-standing
+"sounds like an arrhythmia in sinus rhythm" bug, and it is rate-dependent —
+testing only at 120 BPM will show nothing.
+
+### timeBeginPeriod(1) must be called at startup
+
+`winmm` is linked in CMakeLists.txt specifically for this. Without the call,
+`Sleep(1)` actually sleeps ~15.6 ms, so every polling loop in pulse.cpp runs
+~64 times/second instead of 1000. `sim_timer_resolution_begin()` is called
+from `simmgrInitialize()`; don't remove it.
+
+### SetThreadPriority is real on POSIX now
+
+It used to be a stub that returned `true` without doing anything, so the pulse
+threads silently ran at normal priority on macOS/Linux despite asking for
+`THREAD_PRIORITY_TIME_CRITICAL`. It now maps to `SCHED_FIFO`. If the process
+lacks privilege the call fails and pulse.cpp prints a warning — that warning
+means degraded timing, not a crash.
+
+### Never build browser URLs from PHP's SERVER_NAME
+
+PHP runs as `php -S 0.0.0.0:8081` so phones can reach sim-remote, and the
+built-in server reports that **bind** address verbatim as `SERVER_NAME`.
+`0.0.0.0` is valid to bind to but is not a reachable destination — Windows
+rejects it outright, macOS/Linux quietly treat it as loopback. Symptoms are
+"Could not start PHP Server" (the health check couldn't reach a PHP that had
+started fine) and interface elements failing to load from `http://0.0.0.0:40845/`.
+
+Use `VS_BROWSER_HOST` in sim-ii/init.php and sim-player/init.php — derived from
+`HTTP_HOST`, i.e. whatever the client actually connected to. Correct for both
+the Electron window (127.0.0.1) and a phone on the LAN.
+
+### The sim manager must be on wired Ethernet or 5 GHz Wi-Fi
+
+Beat events are individual TCP messages whose *arrival time is the beat time*,
+so network delay becomes audio delay directly. Measured at 240 BPM:
+
+| Link | Result |
+|------|--------|
+| Wired | flawless |
+| 5 GHz Wi-Fi | flawless — worst ±18 ms, no dropouts |
+| 2.4 GHz Wi-Fi | **unusable** — multi-second stalls |
+
+2.4 GHz produced 1.75 s and 5 s stalls: the AP buffers the beats and delivers
+them in a burst, the controller collapses the burst into one sound, and you get
+several seconds of silence. No amount of buffering in software fixes that.
+
+### Controller firmware must be updated together with the PC software
+
+The fix is split across both ends and neither half is sufficient alone:
+
+- **PC** (pulse.cpp) — removes the 15.6 ms tick quantization
+- **Controller** (sim-ctl-master/wav-trig/soundSense.cpp) — removes polling-loop
+  jitter. Before the fix the sound loop ran at 20 ms and anchored `LUB_DELAY` to
+  when the loop *noticed* the beat rather than when it *arrived* — two
+  independent 0–20 ms windows, so consecutive beats could differ by ~40 ms.
+
+Diagnosing this: run `soundSense -d` on the BeagleBone. It prints
+`arrival=` (beat spacing off the socket) next to `play=` (resulting sound
+spacing). If those two track each other, the controller is fine and the jitter
+arrived with the beat — look upstream at the network or the PC.
+
+### sim-ctl-master needs libgpiod, and controllers have no internet
+
+`sim-ctl-master` links `-lgpiod`; the older `sim-ctl` tree does not. BeagleBone
+images ship `libgpiod2` (the runtime) but not `libgpiod-dev` (the headers), and
+the units are not on the internet. The matching package is bundled:
+
+```bash
+sudo dpkg -i ~/sim-ctl-master/deps/libgpiod-dev_1.4.1-2rcnee3~buster+20190906_armhf.deb
+```
+
+Use the bundled one — stock Debian buster ships 1.2-3, which dpkg will refuse
+against the 1.4.1 rcn-ee runtime on the image.
+
+### BeagleBone clock skew breaks make and cp -u
+
+The BBB has no battery-backed RTC and no network time, so its clock resets every
+boot. `scp` preserves the Mac's timestamps, so uploaded files land "in the
+future"; `make` then decides everything is up to date and does nothing, and
+`make install`'s `cp -u` silently skips the copy. You get a fast, clean-looking
+build that changed nothing.
+
+Sync the clock from the Mac after every BBB reboot, before building:
+
+```bash
+ssh -t debian@beaglebone.local "sudo date -s '$(date -u +'%Y-%m-%d %H:%M:%S')'"
+```
+
+`-t` is required — `sudo` needs a tty. If a build still looks suspiciously
+quick, `rm -f` the target binary and rebuild; and prefer an explicit
+`sudo cp -f` over `make install`.
+
+**Do not use `make factory` on the BeagleBone.** Unlike `make install` it copies
+`rfid.xml` unconditionally, overwriting the per-manikin RFID tag table with the
+repo's defaults. Those tag IDs are specific to the tags embedded in that
+manikin and are not recoverable from the repo.
+
 ### Keychain dialog during signing
 macOS may show a dialog "codesign wants to access key 'The RECOVER Initiative'"
 during the signing step. If the build hangs at "signing", check all windows and
