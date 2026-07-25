@@ -1,0 +1,548 @@
+/*
+ * simUtil.c
+ *
+ * This file is part of the sim-ctl distribution (https://github.com/OpenVetSimDevelopers/sim-ctl).
+ * 
+ * Copyright (c) 2019-2026 VetSim, Cornell University College of Veterinary Medicine Ithaca, NY
+ * 
+ * This program is free software: you can redistribute it and/or modify  
+ * it under the terms of the GNU General Public License as published by  
+ * the Free Software Foundation, version 3.
+ *
+ * This program is distributed in the hope that it will be useful, but 
+ * WITHOUT ANY WARRANTY; without even the implied warranty of 
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License 
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <ctype.h>
+
+#include <time.h>
+#include <errno.h>
+#include <sys/mman.h>
+#include <semaphore.h>
+#include <termios.h>
+#include <syslog.h>
+#include <signal.h>
+#include <execinfo.h>
+#include <string.h>
+#include <libgen.h>
+
+#include "simUtil.h"
+#include "shmData.h"
+
+extern int debug;
+int findAINPath(void );
+
+/*
+ * Function: daemonize
+ *
+ * Convert the task to a daemon. Make it independent of the parent to allow
+ * running forever.
+ *
+ *   Change working directory
+ *   Take Lock
+ *
+ * Parameters: none
+ *
+ * Returns: none
+ */
+
+extern char *program_invocation_name;
+extern char *program_invocation_short_name;
+
+#define RUNNING_DIR			"/"
+#define LOCK_FILE_DIR       "/var/run/"
+
+void daemonize(void )
+{
+    pid_t pid;
+	int i,lfp;
+	char str[16];
+	char buffer[128];
+	
+	if ( getppid()==1 )
+	{
+		return; /* already a daemon */
+	}
+    /* Fork off the parent process */
+    pid = fork();
+
+    /* An error occurred */
+    if (pid < 0)
+	{
+		perror("fork: pid < 0:" );
+        exit(EXIT_FAILURE);
+	}
+    /* Success: Let the parent terminate */
+    if (pid != 0)
+	{
+		// perror("fork: pid > 0:" );
+        exit(EXIT_SUCCESS);
+	}
+    /* On success: The child process becomes session leader */
+    if (setsid() < 0)
+    {
+		perror("setsid" );
+		exit(EXIT_FAILURE);
+	}
+	
+	close(STDIN_FILENO);
+	close(STDOUT_FILENO);
+	close(STDERR_FILENO);
+	i = open("/dev/null",O_RDWR);
+	dup2(i, STDOUT_FILENO );
+	dup2(i, STDERR_FILENO ); /* handle standard I/O */
+	
+	umask(027); /* set newly created file permissions */
+	chdir(RUNNING_DIR); /* change running directory */
+	
+	// Create a Lock File to prevent multiple daemons
+	snprintf(buffer, 128, "%s%s.pid", LOCK_FILE_DIR, program_invocation_short_name );
+	lfp = open(buffer, O_RDWR|O_CREAT, 0640 );
+	if ( lfp < 0 )
+	{
+		syslog(LOG_DAEMON | LOG_ERR, "Cannot open lock file");
+		exit(1); // 
+	}
+	if ( lockf(lfp,F_TLOCK,0) < 0 )
+	{
+		syslog(LOG_DAEMON | LOG_WARNING, "Cannot take lock - another instance may be running");
+		exit(0); // can not lock
+	}
+	
+	/* first instance continues */
+	snprintf(str, 16, "%d\n", getpid());
+	write(lfp, str, strlen(str)); /* record pid to lockfile */
+	signal(SIGCHLD,SIG_IGN); /* ignore child */
+	signal(SIGTSTP,SIG_IGN); /* ignore tty signals */
+	signal(SIGTTOU,SIG_IGN);
+	signal(SIGTTIN,SIG_IGN);
+	signal(SIGHUP,signal_handler); /* catch hangup signal */
+	signal(SIGTERM,signal_handler); /* catch kill signal */
+	
+	snprintf(buffer, 128, "%s started", program_invocation_short_name );
+	syslog (LOG_DAEMON | LOG_NOTICE, "%s", buffer );
+}
+
+
+/*
+ * Function: log_message
+ *
+ * Log a message to syslog. The message is also logged to a named file. The file is opened
+ * for Append and closed on completion of the write. (The file write will be disabled after
+ * development is completed).
+ * 
+ *
+ * Parameters: filename - filename to open for writing
+ *             message - Pointer to message string, NULL terminated
+ *
+ * Returns: none
+ */
+void log_message(const char *filename, const char* message)
+{
+#if LOG_TO_FILE == 1
+	FILE *logfile;
+#endif
+	if ( debug )
+	{
+		printf("%s\n", message );
+	}
+	else
+	{
+		syslog(LOG_NOTICE, "%s", message);
+
+#if LOG_TO_FILE == 1
+		logfile = fopen(filename,"a");
+		if ( !logfile )
+		{
+			return;
+		}
+		fprintf(logfile, "%s\n", message);
+		fclose(logfile );
+#endif
+	}
+}
+
+/*
+ * Function: signal_handler
+ *
+ * Handle inbound signals.
+ *		SIGHUP is ignored 
+ *		SIGTERM closes the process
+ *
+ * Parameters: sig - the signal
+ *
+ * Returns: none
+ */
+void signal_handler(int sig )
+{
+	switch(sig) {
+	case SIGHUP:
+		log_message("","hangup signal catched");
+		break;
+	case SIGTERM:
+		log_message("","terminate signal catched");
+		exit(0);
+		break;
+	}
+}
+/*
+ * Function: signal_fault_handler
+ *
+ * Handle inbound signals.
+ *		SIGHUP is ignored 
+ *		SIGTERM closes the process
+ *
+ * Parameters: sig - the signal
+ *
+ * Returns: none
+ */
+void signal_fault_handler(int sig)
+{
+	int j, nptrs;
+#define SIZE 100
+	void *buffer[100];
+	char **strings;
+
+	nptrs = backtrace(buffer, SIZE);
+	printf("backtrace() returned %d addresses\n", nptrs);
+
+	// The call backtrace_symbols_fd(buffer, nptrs, STDOUT_FILENO)
+	// would produce similar output to the following:
+	//syslog(LOG_NOTICE, "%s", "fault");
+	
+	strings = backtrace_symbols(buffer, nptrs);
+	if (strings == NULL) 
+	{
+		//syslog(LOG_NOTICE, "fault: %s", "no symbols");
+		printf("fault: %s", "no symbols");
+		exit(EXIT_FAILURE);
+	}
+	
+	for ( j = 0; j < nptrs; j++ )
+	{
+		//syslog(LOG_NOTICE, "%d: %s", j, strings[j]);
+		printf("%d: %s\n", j, strings[j]);
+	}
+	free(strings);
+	exit ( -1 );
+}
+void
+catchFaults(void )
+{
+	signal(SIGSEGV,signal_fault_handler );   // install our fault handler
+}
+
+int shmFile;
+extern struct shmData *shmData;
+
+int
+initSHM(int create )
+{
+	void *space;
+	int mmapSize;
+	int pageSize;
+	int allocSize;
+	int mode;
+	int perm;
+	
+	mmapSize = sizeof(struct shmData );
+	// Round up size to integral number of pages
+	pageSize = getpagesize();
+	allocSize = (mmapSize+pageSize-1) & ~(pageSize-1);
+	
+	// Open the Shared Memory space
+	if ( create )
+	{
+		mode = O_CREAT | O_RDWR;
+		perm = S_IRUSR | S_IWUSR;
+	}
+	else
+	{
+		mode = O_RDWR;
+		perm = 0;
+	}
+	
+	shmFile = shm_open(SHM_NAME, mode, perm );
+	if ( shmFile < 0 )
+	{
+		fprintf(stderr, "Failed to open %s. Rval is %d\n", SHM_NAME, shmFile );
+		perror("shm_open" );
+		return ( -3 );
+	}
+	if ( create )
+	{
+		// Set file size
+		if ( ftruncate(shmFile, allocSize) == -1)
+		{
+			perror("ftruncate" );
+			
+			return ( -3 );
+		}
+	}
+	space = mmap((caddr_t)0,
+				allocSize, 
+				PROT_READ | PROT_WRITE,
+				MAP_SHARED,
+				shmFile,
+				0 );
+	if ( space == MAP_FAILED )
+	{
+		perror("mmap" );
+		return ( -4 );
+	}
+	
+	shmData = (struct shmData *)space;
+	
+	return ( 0 );
+}
+
+#define PATH_MAX	512
+char ain_path[PATH_MAX];
+int ain_path_found = 0;
+int ain_new_names = 0;
+
+int findAINPath(void )
+{
+	FILE *fp;
+	struct stat sb;
+	int sts;
+	
+	fp = popen("find /sys/devices -name AIN0", "r" );
+	if ( fp == NULL )
+	{
+		syslog(LOG_DAEMON | LOG_ERR, "findAINPath: popen failed: %s", strerror(errno));
+		return ( -1 );
+	}
+
+	while ( fgets(ain_path, PATH_MAX, fp) != NULL)
+	{
+		snprintf(ain_path, PATH_MAX, "%s", dirname(ain_path ) );	// Return the directory
+		if ( debug > 1 )
+		{
+			printf("%s\n", ain_path);
+		}
+	}
+	pclose(fp );
+	
+	if ( strlen(ain_path ) > 0 )
+	{
+		ain_path_found = 1;
+		if ( debug )
+		{
+			printf("AIN Path is %s\n", ain_path );
+		}
+	}
+	else
+	{
+		// Check for the 'newer' path to the  in_voltageN_raw devices
+		sts = stat("/sys/bus/iio/devices/iio:device0/in_voltage0_raw", &sb );
+		if ( sts == 0 )
+		{
+			snprintf(ain_path, PATH_MAX, "%s", "/sys/bus/iio/devices/iio:device0" );	// Return the directory
+			if ( debug > 1 )
+			{
+				printf("%s\n", ain_path);
+			}
+		}
+		if ( strlen(ain_path ) > 0 )
+		{
+			ain_path_found = 1;
+			ain_new_names = 1;
+			if ( debug )
+			{
+				printf("AIN Path is %s\n", ain_path );
+			}
+		}
+		else
+		{
+			printf("No AIN Path Found\n" );
+		}
+	}
+	return ( 0 );
+}
+	
+#define NAME_LEN (PATH_MAX+32)
+
+int
+read_ain(int chan )
+{
+	int fd;
+	int val = 0;
+	char name[NAME_LEN];
+	int sts;
+	char buf[8];
+	FILE *fp;
+	size_t bytes;
+	
+	if ( ain_path_found == 0 )
+	{
+		findAINPath();
+	}
+	if ( ain_path_found == 1 )
+	{
+		if ( ain_new_names )
+		{
+			snprintf(name, NAME_LEN, "%s/in_voltage%d_raw", ain_path, chan );
+		}
+		else
+		{
+			snprintf(name, NAME_LEN, "%s/AIN%d", ain_path, chan);
+		}
+		
+		fp = fopen (name, "r" );
+		
+		if ( ! fp )
+		{
+			if ( debug )
+			{
+				fprintf(stderr, "Failed to open %s", name );
+			}
+			perror("fopen" );
+			exit ( -2 );
+		}
+		fd = fileno(fp );
+		fd_set set;
+		struct timeval timeout;
+	
+		FD_ZERO(&set);
+		FD_SET(fd, &set);
+		timeout.tv_sec = 1;
+		timeout.tv_usec = 0;
+  
+		sts = select(fd + 1, &set, NULL, NULL, &timeout);
+		if(sts == -1)
+		{
+			syslog(LOG_DAEMON | LOG_ERR, "Select failed for AIN");
+			exit ( -1 );
+		}
+		else if(sts == 0)
+		{
+			syslog(LOG_DAEMON | LOG_ERR, "Select timeout for AIN");
+			exit ( -1 );
+		}
+		bytes = fread(buf, 1, 4, fp );
+		if ( bytes < 1 )
+		{
+			if ( debug )
+			{
+				printf("fread failed for AIN%d, bytes %d, Error %s\n", chan, bytes, strerror(errno));
+			}
+			else
+			{
+				syslog(LOG_DAEMON | LOG_ERR, "fread failed for AIN%d, bytes %d msg: %s", chan, bytes, strerror(errno));
+			}
+		}
+		else
+		{
+			val = atoi(buf );
+		}
+		fclose(fp);
+	}
+
+	return ( val );
+}
+
+/**
+ * cleanString
+ *
+ * remove leading and trailing spaces. Reduce internal spaces to single. Remove tabs, newlines, CRs.
+*/
+#define WHERE_START		0
+#define WHERE_TEXT		1
+#define WHERE_SPACE		2
+
+void
+cleanString(char *strIn )
+{
+	char *in;
+	char *out;
+	int where = WHERE_START;
+	
+	in = (char *)strIn;
+	out = (char *)strIn;
+	while ( *in )
+	{
+		if ( isspace( *in ) )
+		{
+			switch ( where )
+			{
+				case WHERE_START:
+				case WHERE_SPACE:
+					break;
+				
+				case WHERE_TEXT:
+					*out = ' ';
+					out++;
+					where = WHERE_SPACE;
+					break;
+			}
+		}
+		else
+		{
+			where = WHERE_TEXT;
+			*out = *in;
+			out++;
+		}
+		in++;
+	}
+	*out = 0;
+	out--;
+	if ( *out == ' ' )
+	{
+		*out = 0;
+	}
+}
+
+//#define NO_I2C_LOCK	1
+int
+getI2CLock(void )
+{
+#ifndef NO_I2C_LOCK
+	int trycount = 0;
+	int sts;
+
+	while ( ( sts = sem_trywait(&shmData->i2c_sema) ) != 0 )
+	{
+		if ( trycount++ > 200 )
+		{
+			// Could not get lock soon enough. Try again next time.
+			log_message("", "Failed to take i2c_sema");
+			return ( -1 );
+		}
+		usleep(10000 );
+	}
+#endif
+	return ( 0 );
+}
+
+void
+releaseI2CLock(void )
+{
+#ifndef NO_I2C_LOCK
+	sem_post(&shmData->i2c_sema);
+#endif
+}
+
+// Implementation of itoa()
+// Uses snprintf to avoid the out-of-bounds write in the hand-rolled version.
+char itoaString[34] = { 0, };
+
+char* itoa(int num)
+{
+	snprintf(itoaString, sizeof(itoaString), "%d", num);
+	return itoaString;
+}

@@ -567,7 +567,7 @@ console.log(controls['awRR'].increment);
 					<button id="media-button" class="scenario-button float-left">Show Media</button>
 				</div>
 				<div id="controller-ip">
-					No controller found
+					<span id="controller-status-dot" class="ctrl-dot ctrl-disconnected"></span><span id="controller-status-text">No controller found</span>
 				</div>
 			</div>
 			<div id="event-monitor" class="float-right ii-border">

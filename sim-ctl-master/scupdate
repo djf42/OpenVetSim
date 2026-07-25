@@ -1,0 +1,23 @@
+#!/bin/bash
+#
+echo "Sim Controller Update Version 1.1.13"
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+if ! id | grep -q root; then
+	echo "must be run as root (use \"sudo scupdate\")"
+	exit
+fi
+
+echo "stopping simctl service"
+systemctl stop simctl
+
+cp ain_air_test ainmon breathSense cprScan pulse rfidScan simController simCurl soundSense tsunami_test /usr/local/bin
+cp -r html/* /var/www/html
+cp *.cgi /var/www/cgi-bin
+
+echo "starting simctl service"
+systemctl start simctl
+
+echo "Update is complete"

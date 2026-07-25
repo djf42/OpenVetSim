@@ -280,6 +280,12 @@ simmgrInitialize(void)
 	char* ptr;
 	typedef void (*SignalHandlerPointer)(int);
 
+	// Raise the system timer resolution to 1 ms before any timing thread starts.
+	// Without this, Sleep(1) in pulseTimer() sleeps ~15.6 ms on Windows, quantizing
+	// beat events to ~15.6 ms boundaries and producing occasional short RR intervals
+	// that are audible as an irregular rhythm.  See platform.h for detail.
+	sim_timer_resolution_begin();
+
 	SignalHandlerPointer previousHandler;
 	previousHandler = signal(SIGABRT, SignalHandler);
 	previousHandler = signal(SIGFPE, SignalHandler);

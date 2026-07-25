@@ -125,6 +125,106 @@ void pulseBroadcastLoop(void);
 std::mutex breathSema;
 std::mutex pulseSema;
 
+// Beat trace instrumentation.
+// Set to 1 to log every message sent to the hardware controller with an absolute
+// millisecond timestamp.  Use this to answer, from data rather than inference:
+//   - Are pulse messages actually evenly spaced at the source?
+//   - Is a spurious extra beat being emitted (an unexpected "pulseVPC" will make
+//     the controller sound a beat right next to a normal one)?
+//   - Does a "breath" message land immediately before a delayed heart sound?
+//     (If so, the controller is serializing breath handling ahead of the beat,
+//     and the fix belongs in the firmware, not here.)
+// Roughly 2-4 lines/second at typical rates -- fine for a diagnostic run.
+// Set to 0 to silence.
+int beatTraceEnabled = 1;
+
+/*
+ * Beat trace ring buffer.
+ *
+ * IMPORTANT: log_message() opens, writes and closes a file on every call, takes a
+ * mutex, and on the Windows GUI build also updates an edit control.  That is far
+ * too heavy to call from pulseBroadcastLoop, which runs at THREAD_PRIORITY_TIME_
+ * CRITICAL and is the thread that actually delivers beats to the controller --
+ * logging there would add exactly the kind of delay we are trying to measure.
+ *
+ * So the beat thread only writes plain integers into this ring buffer (no locks,
+ * no I/O), and pulseProcessChild -- a normal-priority 50 ms loop -- drains it and
+ * does the logging.  Single producer, single consumer.
+ */
+// Longest send() observed, in microseconds, since the last trace record.
+// Written by broadcast_word (beat thread), sampled and reset by the trace push.
+volatile long long sendMaxUsec = 0;
+
+#define BEAT_TRACE_LEN 256
+struct beatTraceRec
+{
+	char      kind[10];
+	ULONGLONG t;
+	long long interval;
+	long long expected;
+	int       extra;
+	long long sendUsec;
+};
+static struct beatTraceRec beatTraceBuf[BEAT_TRACE_LEN];
+static volatile unsigned int beatTraceHead = 0;	// advanced by the beat thread
+static volatile unsigned int beatTraceTail = 0;	// advanced by the drain thread
+
+static void
+beatTracePush(const char* kind, ULONGLONG t, long long interval, long long expected, int extra)
+{
+	unsigned int h = beatTraceHead;
+	struct beatTraceRec* r = &beatTraceBuf[h % BEAT_TRACE_LEN];
+	sprintf_s(r->kind, sizeof(r->kind), "%s", kind);
+	r->t        = t;
+	r->interval = interval;
+	r->expected = expected;
+	r->extra    = extra;
+	r->sendUsec = sendMaxUsec;	// longest send() since the previous record
+	sendMaxUsec = 0;
+	beatTraceHead = h + 1;	// publish last
+}
+
+// Called from pulseProcessChild (normal priority) -- safe to do file I/O here.
+void
+beatTraceDrain(void)
+{
+	char buf[BUF_SIZE];
+
+	// If the producer lapped us, skip ahead rather than emitting stale records.
+	if ((beatTraceHead - beatTraceTail) > BEAT_TRACE_LEN)
+	{
+		beatTraceTail = beatTraceHead - BEAT_TRACE_LEN;
+	}
+
+	while (beatTraceTail != beatTraceHead)
+	{
+		struct beatTraceRec* r = &beatTraceBuf[beatTraceTail % BEAT_TRACE_LEN];
+
+		// Flag intervals that deviate, but only where the rate held steady
+		// (expected > 0 means the caller confirmed the rate did not change).
+		if (r->expected > 0)
+		{
+			long long deviation = r->interval - r->expected;
+			if (deviation > 25 || deviation < -25)
+			{
+				sprintf_s(buf, BUF_SIZE,
+					"BEAT-JITTER: interval %lld ms, expected %lld ms, deviation %+lld ms",
+					r->interval, r->expected, deviation);
+				log_message("", buf);
+			}
+		}
+
+		if (beatTraceEnabled)
+		{
+			sprintf_s(buf, BUF_SIZE, "TRACE %-8s t=%llu  interval=%lld  listeners=%d  send=%lldus",
+				r->kind, r->t, r->interval, r->extra, r->sendUsec);
+			log_message("", buf);
+		}
+
+		beatTraceTail++;
+	}
+}
+
 int beatPhase = 0;
 int vpcState = 0;
 int vpcCount = 0;
@@ -341,7 +441,7 @@ resetTimer(int rate, int isCardiac, int isFib)
 {
 	ULONGLONG wait_time_msec;
 	ULONGLONG remaining;
-	ULONGLONG now = simmgr_shm->server.msec_time;
+	ULONGLONG now = GetTickCount64();
 
 	wait_time_msec = getWaitTimeMsec(rate, isCardiac, isFib);
 
@@ -407,7 +507,7 @@ set_pulse_rate(int bpm)
 void
 restart_breath_timer(void)
 {
-	ULONGLONG now = simmgr_shm->server.msec_time;
+	ULONGLONG now = GetTickCount64();
 	ULONGLONG wait_time_msec;
 
 	// When rate is 0, getWaitTimeMsec would divide by zero (producing +inf or 0),
@@ -447,7 +547,7 @@ set_breath_rate(int bpm)
 		// the timer cannot accidentally fire during the 0->positive rate transition.
 		// breathInterval is set to 60 s so any stray reads get a sane value.
 		breathInterval = 60000;
-		nextBreathTime = simmgr_shm->server.msec_time + 3600000ULL;	// 1 hour away
+		nextBreathTime = GetTickCount64() + 3600000ULL;	// 1 hour away
 		return;
 	}
 
@@ -579,6 +679,37 @@ pulseTask(void )
 		cfd = accept(sfd, (struct sockaddr*)&client_addr, &socklen);
 		if (cfd >= 0)
 		{
+			// Limit TCP retransmit time so a hard power-off is detected quickly.
+			// Without this, Windows TCP may retransmit silently for several minutes
+			// before send() returns an error.  TCP_MAXRT = 10 causes TCP to give up
+			// after 10 seconds, so the next broadcast_word() call will fail and
+			// simControllers[i].allocated will be cleared within ~10-12 seconds.
+			// TCP_MAXRT is a Windows-specific socket option.  The previous
+			// "#ifndef TCP_MAXRT / #define TCP_MAXRT 5" fallback also applied on
+			// macOS/Linux, where IPPROTO_TCP option 5 is not TCP_MAXRT at all --
+			// that call just failed silently with ENOPROTOOPT.  Guard it properly.
+#ifdef _WIN32
+#ifndef TCP_MAXRT
+#define TCP_MAXRT 5   // defined in ws2def.h on most Windows SDKs
+#endif
+			int maxRetrySeconds = 10;
+			setsockopt(cfd, IPPROTO_TCP, TCP_MAXRT, (const char*)&maxRetrySeconds, sizeof(maxRetrySeconds));
+#endif
+
+			// Disable Nagle's algorithm.  Every message sent here is tiny ("pulse\n"
+			// is 6 bytes) and latency-critical, and none of them benefit from being
+			// coalesced, so TCP_NODELAY is the correct setting for this socket.
+			//
+			// Note: this was NOT the cause of the intermittent irregular heart sound.
+			// Nagle only withholds a small segment while earlier data is still
+			// unacknowledged; at a 500 ms beat interval the previous segment has been
+			// ACKed many times over before the next beat is queued, so Nagle never
+			// engages here.  Keeping the option set anyway -- it is correct, and it
+			// does matter for the back-to-back pulse+breath case where two messages
+			// are written in the same millisecond.
+			int noDelay = 1;
+			setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, (const char*)&noDelay, sizeof(noDelay));
+
 			char newIpAddr[STR_SIZE];
 			sprintf_s(newIpAddr, STR_SIZE, "%d.%d.%d.%d",
 				client_addr.sa_data[2] & 0xff,
@@ -722,6 +853,8 @@ broadcast_word(char* word)
 	int count = 0;
 	SOCKET fd;
 	size_t len;
+	int sendResult;  // send() returns int; SOCKET_ERROR = -1. Must NOT store in size_t
+	                 // because size_t is unsigned and "size_t < 0" is always false.
 	int i;
 
 	for (i = 0; i < MAX_LISTENERS; i++)
@@ -731,13 +864,26 @@ broadcast_word(char* word)
 			fd = listeners[i].cfd;
 			len = strlen(word);
 			//printf("Send %s (%d) to %d - ", word, len, i);
-			len = send(fd, word, (int)len, 0);
-			//printf("%d\n", len);
-			if (len < 0) // This detects closed or disconnected listeners.
+
+			// Time the send() itself.  These sockets are in blocking mode, so if the
+			// controller ever stops reading long enough to fill the kernel send
+			// buffer, send() blocks here and stalls the beat path.  Recording the
+			// duration tells us whether that is happening -- a healthy 6-byte send
+			// is a few microseconds.
+			auto sendT0 = std::chrono::steady_clock::now();
+			sendResult = send(fd, word, (int)len, 0);
+			auto sendT1 = std::chrono::steady_clock::now();
+			{
+				long long us = (long long)std::chrono::duration_cast<std::chrono::microseconds>(sendT1 - sendT0).count();
+				if (us > sendMaxUsec) sendMaxUsec = us;
+			}
+			//printf("%d\n", sendResult);
+			if (sendResult < 0) // This detects closed or disconnected listeners.
 			{
 				printf("Close listener %d\n", i);
 				closesocket(fd);
 				listeners[i].allocated = 0;
+				simmgr_shm->simControllers[i].allocated = 0;
 			}
 			else
 			{
@@ -780,23 +926,31 @@ pulseTimer(void)
 	while (1)
 	{
 		sim_sleep_ms(1);
-		now = simmgr_shm->server.msec_time;
+		// Read wall-clock time directly — do NOT use simmgr_shm->server.msec_time here.
+		// That field is updated by hrcheck_handler() in a separate non-time-critical thread.
+		// If that thread is delayed by the OS (context switch, contention), the field can
+		// be stale for 50-200 ms, causing beats to fire late.  The NEXT beat then fires at
+		// its correct absolute time, making the interval between two consecutive beats
+		// audibly short (sounds like an arrhythmia in sinus rhythm).
+		// This thread is already THREAD_PRIORITY_TIME_CRITICAL — reading GetTickCount64()
+		// directly gives precise, independent timing with no cross-thread dependency.
+		now = GetTickCount64();
 		if (nextPulseTime <= now)
 		{
 			pulse_beat_handler();
 			nextPulseTime += pulseInterval;
-			now2 = simmgr_shm->server.msec_time;
+			now2 = GetTickCount64();
 			if (nextPulseTime <= (now2+1))
 			{
 				nextPulseTime = now2;
 			}
 		}
-		now = simmgr_shm->server.msec_time;
+		now = GetTickCount64();
 		if (nextBreathTime <= now)
 		{
 			breath_beat_handler();
 			nextBreathTime += breathInterval;
-			now2 = simmgr_shm->server.msec_time;
+			now2 = GetTickCount64();
 			if (nextBreathTime <= (now2+1))
 			{
 				nextBreathTime = now2 + breathInterval;
@@ -829,37 +983,17 @@ pulseBroadcastLoop(void)
 
 	while (1)
 	{
-		sim_sleep_ms(10);
-		
-		if (portUpdateLoops++ > 500)
-		{
-			sprintf_s(pbuf, "statusPort:%d", PORT_STATUS);
-			broadcast_word(pbuf);
-			portUpdateLoops = 0;
-		}
-		
-		if (last_pulse != simmgr_shm->status.cardiac.pulseCount)
-		{
-			last_pulse = simmgr_shm->status.cardiac.pulseCount;
-			count = broadcast_word(pulseWord);
-			if (count)
-			{
-#ifdef DEBUG
-				//printf("Pulse sent to %d listeners\n", count);
-#endif
-			}
-		}
-		if (last_pulseVpc != simmgr_shm->status.cardiac.pulseCountVpc)
-		{
-			last_pulseVpc = simmgr_shm->status.cardiac.pulseCountVpc;
-			count = broadcast_word(pulseWordVPC);
-			if (count)
-			{
-#ifdef DEBUG
-				//printf("PulseVPC sent to %d listeners\n", count);
-#endif
-			}
-		}
+		// Poll at 1 ms.  This loop is what actually delivers the "pulse" message to
+		// the hardware controller, so any delay here lands directly on the audible
+		// heart sound.  A 10 ms poll added a second quantization stage on top of
+		// pulseTimer's, and the two loops drifted against each other, producing an
+		// occasional short RR interval.  With 1 ms timer resolution now requested at
+		// startup (see platform.h), this delivers beats within ~1 ms of generation.
+		sim_sleep_ms(1);
+
+		portUpdateLoops++;
+
+		// Manual-breath bookkeeping involves no network I/O, so it is not gated.
 		if (last_manual_breath != simmgr_shm->status.respiration.manual_count)
 		{
 			last_manual_breath = simmgr_shm->status.respiration.manual_count;
@@ -869,21 +1003,118 @@ pulseBroadcastLoop(void)
 				simmgr_shm->status.respiration.rate,
 				simmgr_shm->status.respiration.manual_count);
 		}
-		if (last_breath != simmgr_shm->status.respiration.breathCount)
+
+		/*
+		 * ONE MESSAGE PER READ WINDOW.
+		 *
+		 * The sim-ctl controller (sim-ctl/comm/simCtlComm.cpp, simCtlComm::wait)
+		 * reads up to 31 bytes and then matches ONLY the start of that buffer:
+		 *
+		 *     len = read(commFD, buffer, SM_BUF_MAX-1);
+		 *     if (strncmp(buffer, "pulse",  5) == 0) return SYNC_PULSE;
+		 *     else if (strncmp(buffer, "breath", 6) == 0) return SYNC_BREATH;
+		 *     else  "bad sync msg"
+		 *
+		 * Anything after the first message in that read is silently discarded, and
+		 * a read that does not START with a known keyword is discarded entirely.
+		 * The controller's socket is left non-blocking, so it polls roughly every
+		 * millisecond -- meaning any two messages we write within ~1 ms of each
+		 * other are very likely to be collected by a single read() and one of them
+		 * is thrown away.  A discarded "pulse" is a lost heartbeat.
+		 *
+		 * That is why "statusPort:..." is especially damaging: the controller has no
+		 * case for it, so if a beat is coalesced behind one, the whole read is
+		 * rejected as a bad sync message and the beat is lost.
+		 *
+		 * We cannot reflash the controller from here, so the sender guarantees the
+		 * separation instead: at most one message per CONTROLLER_MSG_GAP_MS, in
+		 * priority order, with anything not sent left pending for a later pass.
+		 * A breath arriving a few ms late is inaudible; a dropped beat is not.
+		 *
+		 * A beat is NEVER delayed by this gate -- it always goes out immediately.
+		 * Only the lower-priority messages wait, so the gap can never itself become
+		 * a source of late heart sounds.
+		 */
+		const ULONGLONG CONTROLLER_MSG_GAP_MS = 15;	// >> the controller's ~1 ms poll
+		static ULONGLONG lastMsgMsec = 0;
+		ULONGLONG msgNow = GetTickCount64();
+		int gapElapsed = ((msgNow - lastMsgMsec) >= CONTROLLER_MSG_GAP_MS);
+
+		if (last_pulse != simmgr_shm->status.cardiac.pulseCount)
 		{
-			last_breath = simmgr_shm->status.respiration.breathCount;
-			count = 0;
-			if (last_manual_breath != simmgr_shm->status.respiration.manual_count)
+			last_pulse = simmgr_shm->status.cardiac.pulseCount;
+			lastMsgMsec = msgNow;	// pushes any pending breath/status back
+			count = broadcast_word(pulseWord);
+
+			// Beat-interval instrumentation.  See beatTrace notes near the top of
+			// pulseBroadcastLoop.  Measures GENERATION timing (send() returns as soon
+			// as the data is buffered), so a quiet log means beats leave this process
+			// evenly and any remaining irregularity was added downstream.
 			{
-				last_manual_breath = simmgr_shm->status.respiration.manual_count;
+				static ULONGLONG lastBeatMsec = 0;
+				static long long lastExpected = 0;
+				ULONGLONG beatNow = GetTickCount64();
+				long long expected = (long long)pulseInterval;
+				// pulseTimer runs a 10-phase counter for VPC/afib, so a delivered
+				// beat spans 10 intervals in those modes.
+				if ((vpcType > 0) || (afibActive))
+				{
+					expected *= 10;
+				}
+				if (lastBeatMsec != 0)
+				{
+					// Only ask the drain to judge this interval when the rate held
+					// steady across it.  Otherwise every rate change reports a false
+					// deviation (the 80->120 change logged "interval 750, expected
+					// 500" -- 750 was correct for the old rate).  Passing expected=0
+					// means "trace it, but do not flag it".
+					long long judge = (lastExpected > 0 && lastExpected == expected) ? lastExpected : 0;
+					beatTracePush("pulse", beatNow, (long long)(beatNow - lastBeatMsec), judge, count);
+				}
+				lastBeatMsec  = beatNow;
+				lastExpected  = expected;
 			}
-			count = broadcast_word(breathWord);
-#ifdef DEBUG
+
 			if (count)
 			{
-				//printf("Breath sent to %d listeners\n", count);
-			}
+#ifdef DEBUG
+				//printf("Pulse sent to %d listeners\n", count);
 #endif
+			}
+		}
+		// "else if" from here down: a beat has priority over a breath, and a breath
+		// over the status-port announcement.  Whatever is not sent this pass stays
+		// pending (its last_* value is only updated when the message actually goes
+		// out) and is picked up on the next pass, one gap later.
+		else if (last_pulseVpc != simmgr_shm->status.cardiac.pulseCountVpc)
+		{
+			last_pulseVpc = simmgr_shm->status.cardiac.pulseCountVpc;
+			lastMsgMsec = msgNow;
+			count = broadcast_word(pulseWordVPC);
+
+			// A VPC message makes the controller sound a beat.  If one is emitted while
+			// the rhythm is supposed to be plain sinus (vpcType == 0) that is a spurious
+			// beat landing next to a normal one.  "extra" carries vpcType, so extra=0
+			// on a pulseVPC line means VPCs were disabled.
+			beatTracePush("pulseVPC", GetTickCount64(), 0, 0, vpcType);
+		}
+		else if (gapElapsed && (last_breath != simmgr_shm->status.respiration.breathCount))
+		{
+			last_breath = simmgr_shm->status.respiration.breathCount;
+			lastMsgMsec = msgNow;
+			count = broadcast_word(breathWord);
+
+			beatTracePush("breath", GetTickCount64(), 0, 0, count);
+		}
+		else if (gapElapsed && (portUpdateLoops > 5000))	// ~5 s cadence at a 1 ms poll
+		{
+			// Sent last and on its own.  The controller does not understand this
+			// message and will log it as a bad sync message -- harmless in isolation,
+			// but it must never share a read() with a beat.
+			portUpdateLoops = 0;
+			lastMsgMsec = msgNow;
+			sprintf_s(pbuf, "statusPort:%d", PORT_STATUS);
+			broadcast_word(pbuf);
 		}
 	}
 	printf("pulseBroadcastLoop exit\n");
@@ -897,6 +1128,10 @@ pulseProcessChild(void)
 	while (1)
 	{
 		sim_sleep_ms(50);		// 50 msec wait
+
+		// Flush any beat trace records recorded by the time-critical broadcast
+		// thread.  Done here so the file I/O never happens on the beat path.
+		beatTraceDrain();
 
 		if (strcmp(simmgr_shm->status.scenario.state, "Running") == 0)
 		{
@@ -971,7 +1206,7 @@ pulseProcessChild(void)
 				// scales reasonably with different ramp speeds.
 				// Fix-1 (resetTimer) will NOT pull this in because the remaining time
 				// stays well below breathInterval for the entire wait.
-				nextBreathTime = simmgr_shm->server.msec_time + (breathInterval / 7);
+				nextBreathTime = GetTickCount64() + (breathInterval / 7);
 			}
 			breathSema.unlock();
 

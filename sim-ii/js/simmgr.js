@@ -1168,36 +1168,58 @@ console.log("New scenario state RUNNING");
 				}
 
 				/************ controller ip **************/
-				if(typeof(response.controllers) != "undefined" && typeof(response.controllers[1]) != "undefined" && response.controllers[1] != controls.controllers.ip) {
-					controls.controllers.ip = response.controllers[1];
-					if( controls.controllers.ip == "" ) {
-						$('#controller-ip').html("No controller found");
-					}
-					else
-					{
-						var str = "Controller found at IP address:<br>";
-						jQuery.each(response.controllers, function(){
-							str += '<a href="javascript:void(0);" onClick=PopupCenter(\'http://'+this+'\',\'ctlStatus'+this+'\',\'448\',\'448\'); return false;">'+this+'</a><br>';
-									   
-						});
-						$('#controller-ip').html(str);
-						
-						// call fetch version
-						$.ajax({
-							url: '../sim-ii/ajax/ajaxGetCntrlStat.php',
-							type: 'get',
-							dataType: 'json',
-							data: { ip : controls.controllers.ip },
-							success: function(response,  textStatus, jqXHR ) {
-								if( response.ver != "no data" && response.ver != 'failed' ) {
-									controls.controllers.fwVers = response.ver;
-								} else {
-									controls.controllers.fwVers = "Controller not found";
-								}
-							}
-						});
+				if(typeof(response.controllers) != "undefined") {
+					// Use empty string if key "1" is absent (controller dropped off the network)
+					var newIp = (typeof(response.controllers[1]) != "undefined") ? response.controllers[1] : "";
+					if(newIp != controls.controllers.ip) {
+						controls.controllers.ip = newIp;
+						if(controls.controllers.ip == "") {
+							controls.controllers.lastSeen = 0;
+							$('#controller-status-dot').removeClass('ctrl-connected').addClass('ctrl-disconnected');
+							$('#controller-status-text').html("No controller found");
+						}
+						else
+						{
+							controls.controllers.lastSeen = Date.now();
+							$('#controller-status-dot').removeClass('ctrl-disconnected').addClass('ctrl-connected');
+							var str = "Controller: ";
+							jQuery.each(response.controllers, function(){
+								str += '<a href="javascript:void(0);" onClick=PopupCenter(\'http://'+this+'\',\'ctlStatus'+this+'\',\'448\',\'448\'); return false;">'+this+'</a> ';
+							});
+							$('#controller-status-text').html(str);
 
-						
+							// call fetch version
+							$.ajax({
+								url: '../sim-ii/ajax/ajaxGetCntrlStat.php',
+								type: 'get',
+								dataType: 'json',
+								data: { ip : controls.controllers.ip },
+								success: function(response,  textStatus, jqXHR ) {
+									if( response.ver != "no data" && response.ver != 'failed' ) {
+										controls.controllers.fwVers = response.ver;
+									} else {
+										controls.controllers.fwVers = "Controller not found";
+									}
+								}
+							});
+						}
+					}
+					else if(newIp != "") {
+						// Controller IP unchanged — refresh the heartbeat timestamp so the
+						// watchdog timer below knows the controller is still being reported.
+						controls.controllers.lastSeen = Date.now();
+					}
+				}
+
+				/************ controller watchdog **************/
+				// Belt-and-suspenders: if the C++ flag hasn't cleared yet but we haven't
+				// seen a confirmed controller for 20 seconds, show disconnected anyway.
+				if(controls.controllers.ip != "" && controls.controllers.lastSeen > 0) {
+					if((Date.now() - controls.controllers.lastSeen) > 20000) {
+						controls.controllers.ip = "";
+						controls.controllers.lastSeen = 0;
+						$('#controller-status-dot').removeClass('ctrl-connected').addClass('ctrl-disconnected');
+						$('#controller-status-text').html("No controller found");
 					}
 				}
 				/************ auscultation **************/

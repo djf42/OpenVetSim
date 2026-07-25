@@ -45,3 +45,33 @@ sim-ii/tmp/
 # ── Claude Cowork internal ────────────────────────────────────────────────────
 .claude/
 .skills/
+
+# ── Code-signing material — MUST NEVER be committed ───────────────────────────
+# Certificates/ holds developer_id.key, the Apple signing private key.
+Certificates/
+*.key
+*.cer
+*.csr
+*.p12
+*.pfx
+
+# ── Reference copies of upstream repos (not part of this project) ──────────────
+# Kept locally for diffing against the pre-migration code; not ours to vendor.
+WinVetSim-master/
+WinVetSim-master.zip
+sim-ctl-master.zip
+
+# ── Runtime logs, recordings and scratch ──────────────────────────────────────
+simlogs/
+debian@*
+
+# ── sim-ctl compiled daemons (no file extension, so not caught above) ─────────
+sim-ctl-master/comm/simController
+sim-ctl-master/comm/ctlstatus.cgi
+sim-ctl-master/comm/simCurl
+sim-ctl-master/cardiac/rfidScan
+sim-ctl-master/cpr/cprScan
+sim-ctl-master/pulse/pulse
+sim-ctl-master/respiration/breathSense
+sim-ctl-master/wav-trig/soundSense
+sim-ctl-master/update/

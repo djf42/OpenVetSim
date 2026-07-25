@@ -74,9 +74,11 @@
 #include <stringapiset.h>
 #include <sal.h>
 #include <psapi.h>
+#include <timeapi.h>	// timeBeginPeriod / timeEndPeriod (winmm)
 
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Psapi.lib")
+#pragma comment(lib, "winmm.lib")
 
 // --- Mutex abstraction (Windows: HANDLE) ---
 using SIM_MUTEX = HANDLE;
@@ -100,6 +102,22 @@ inline void sim_close_mutex(SIM_MUTEX m)
 
 // --- Sleep ---
 inline void sim_sleep_ms(unsigned int ms) { Sleep(ms); }
+
+// --- Timer resolution ---
+// Windows' default system timer resolution is ~15.6 ms.  Without raising it,
+// Sleep(1) actually sleeps ~15.6 ms, so the pulse and breath timing loops in
+// pulse.cpp only get to check their deadlines ~64 times/second.  Beat events
+// are therefore quantized to ~15.6 ms boundaries, and because the beat
+// interval is rarely an exact multiple of 15.6 ms the quantization phase
+// drifts -- every so often a beat lands one tick late while the following
+// beat lands on schedule, making that one RR interval audibly short.
+// pulseBroadcastLoop's Sleep(10) has the same problem, and the two loops beat
+// against each other, compounding the error to ~30 ms.
+//
+// timeBeginPeriod(1) requests 1 ms resolution process-wide (winmm is already
+// linked in CMakeLists.txt for this purpose).  Call once at startup.
+inline void sim_timer_resolution_begin(void) { timeBeginPeriod(1); }
+inline void sim_timer_resolution_end(void)   { timeEndPeriod(1); }
 
 // --- sim_clock_gettime_tv: on Windows, clock_gettime already uses timeval* ---
 // (Windows clock_gettime is our custom implementation in simutil.cpp)
@@ -125,11 +143,14 @@ inline void sim_sleep_ms(unsigned int ms) { Sleep(ms); }
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>	// TCP_NODELAY
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <cerrno>
+#include <pthread.h>
+#include <sched.h>
 
 // --- Windows integer types ---
 using DWORD     = uint32_t;
@@ -174,6 +195,11 @@ inline void      sim_close_mutex(SIM_MUTEX m)  { delete m; }
 
 // --- Sleep ---
 inline void sim_sleep_ms(unsigned int ms) { usleep((useconds_t)ms * 1000u); }
+
+// --- Timer resolution ---
+// POSIX usleep() already honours sub-millisecond requests; nothing to do.
+inline void sim_timer_resolution_begin(void) {}
+inline void sim_timer_resolution_end(void)   {}
 
 // --- sprintf_s → snprintf ---
 // Two overloads to handle both MSVC usage forms:
@@ -381,12 +407,54 @@ inline void sim_mkdir(const char* path)
 #define _tprintf printf
 #define _tprintf_s printf
 
-// --- Windows thread priority stubs (POSIX: scheduling handled by OS) ---
-inline void* GetCurrentThread() { return nullptr; }
-inline bool  SetThreadPriority(void* /*hThread*/, int /*nPriority*/) { return true; }
-inline int   GetThreadPriority(void* /*hThread*/) { return 0; }
+// --- Thread priority ---
 #define THREAD_PRIORITY_TIME_CRITICAL  15
 #define THREAD_PRIORITY_NORMAL          0
+
+inline void* GetCurrentThread() { return nullptr; }
+inline int   GetThreadPriority(void* /*hThread*/)
+{
+    int policy;
+    struct sched_param sp;
+    if (pthread_getschedparam(pthread_self(), &policy, &sp) != 0) return 0;
+    return (policy == SCHED_FIFO || policy == SCHED_RR) ? THREAD_PRIORITY_TIME_CRITICAL
+                                                        : THREAD_PRIORITY_NORMAL;
+}
+
+// This used to be a no-op stub, which meant the pulse timing threads ran at
+// ordinary priority on macOS/Linux even though pulse.cpp asks for
+// THREAD_PRIORITY_TIME_CRITICAL.  An ordinary-priority thread can be preempted
+// by the scheduler for tens of milliseconds, delaying a beat -- and because the
+// following beat is still scheduled from its original absolute time, that one
+// arrives early, producing a short RR interval that is audible as an irregular
+// rhythm.  Promote to SCHED_FIFO so the request is actually honoured.
+//
+// Note: elevating to a real-time policy may be refused without privileges.  The
+// return value reflects that, and pulse.cpp already prints a warning on failure.
+inline bool SetThreadPriority(void* /*hThread*/, int nPriority)
+{
+    struct sched_param sp;
+    int policy;
+
+    memset(&sp, 0, sizeof(sp));
+
+    if (nPriority >= THREAD_PRIORITY_TIME_CRITICAL)
+    {
+        policy = SCHED_FIFO;
+        int lo = sched_get_priority_min(SCHED_FIFO);
+        int hi = sched_get_priority_max(SCHED_FIFO);
+        // High, but not the absolute maximum -- leave headroom above us so we
+        // cannot starve the kernel's own real-time work.
+        sp.sched_priority = lo + (((hi - lo) * 3) / 4);
+    }
+    else
+    {
+        policy = SCHED_OTHER;
+        sp.sched_priority = 0;
+    }
+
+    return (pthread_setschedparam(pthread_self(), policy, &sp) == 0);
+}
 
 // --- _gcvt_s: convert double to string (base 10 only) ---
 inline int _gcvt_s(char* buf, size_t sz, double val, int digits)

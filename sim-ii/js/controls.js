@@ -6,7 +6,8 @@ See gpl.html
 	var controls = {
 		controllers: {
 			ip: "",				// controller IP address
-			fwVers: ""
+			fwVers: "",
+			lastSeen: 0			// Date.now() timestamp of last confirmed status poll; 0 = never seen
 		},
 		
 		defib: {
