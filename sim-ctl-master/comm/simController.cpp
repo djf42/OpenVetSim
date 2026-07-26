@@ -41,6 +41,9 @@
 #include <signal.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 /*
 #include <libxml/xmlreader.h>
@@ -197,6 +200,154 @@ int main(int argc, char *argv[])
 	}
 }
 /*
+ * FUNCTION: simMgrHttpGet
+ *
+ * ARGUMENTS:
+ *		ip     - Simulation manager IP address (dotted quad)
+ *		port   - Simulation manager status port
+ *		query  - Query string only, e.g. "simctrldata=1" or "set:cpr:release=3"
+ *
+ * RETURNS:
+ *		A read-only FILE* positioned at the start of the HTTP response BODY,
+ *		or NULL on failure. Caller must fclose() it.
+ *
+ * DESCRIPTION:
+ *		Performs a plain HTTP/1.0 GET against
+ *		http://<ip>:<port>/cgi-bin/simstatus.cgi?<query>
+ *
+ *		This replaces popen("curl ...") for three reasons:
+ *
+ *		1. NO EXTERNAL DEPENDENCY. The previous code shelled out to the system
+ *		   curl binary. Controllers are not on the internet, so a unit whose
+ *		   image lacks curl cannot have it installed with apt-get — and there
+ *		   are ~150 units in the field, most owned by other institutions. The
+ *		   older sim-ctl tree used its own bundled simCurl wrapper, so units
+ *		   upgraded from it may never have had the curl CLI at all. Such a unit
+ *		   starts cleanly and then silently fails to report auscultation, pulse
+ *		   palpation and CPR back to the manager.
+ *
+ *		2. NO fork/exec PER SENSOR EVENT. popen() spawned a shell AND a curl
+ *		   process for every auscultation move, pulse touch and compression.
+ *		   On a single-core BeagleBone that is significant CPU, competing with
+ *		   the sound daemon whose timing must stay tight.
+ *
+ *		3. NO SHELL COMMAND CONSTRUCTION, so there is no need to reason about
+ *		   whether a value could contain shell metacharacters.
+ *
+ *		This follows the precedent already set in this file, where
+ *		popen("date ...") was replaced by a direct settimeofday() call.
+ *
+ *		The response body is held in a static buffer and wrapped with
+ *		fmemopen() so existing fgets() based parsing works unchanged. Callers
+ *		are sequential and single-threaded, and each fcloses before the next
+ *		call, so one shared buffer is safe.
+*/
+#define HTTP_RESP_MAX	65536
+#define HTTP_IO_TIMEOUT	5		/* seconds */
+
+static char httpRespBuf[HTTP_RESP_MAX];
+
+static FILE *
+simMgrHttpGet(const char *ip, int port, const char *query )
+{
+	int fd;
+	struct sockaddr_in addr;
+	struct timeval tv;
+	char req[1024];
+	ssize_t n;
+	size_t total = 0;
+	size_t reqLen;
+	char *body;
+
+	if ( ip == NULL || ip[0] == 0 || port <= 0 )
+	{
+		return ( NULL );
+	}
+
+	fd = socket(AF_INET, SOCK_STREAM, 0 );
+	if ( fd < 0 )
+	{
+		return ( NULL );
+	}
+
+	/* Never block the caller indefinitely: the manager may be off or moved. */
+	tv.tv_sec = HTTP_IO_TIMEOUT;
+	tv.tv_usec = 0;
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv) );
+	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv) );
+
+	memset(&addr, 0, sizeof(addr) );
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons((uint16_t)port );
+	if ( inet_pton(AF_INET, ip, &addr.sin_addr ) != 1 )
+	{
+		close(fd );
+		return ( NULL );
+	}
+
+	if ( connect(fd, (struct sockaddr *)&addr, sizeof(addr) ) < 0 )
+	{
+		close(fd );
+		return ( NULL );
+	}
+
+	/* HTTP/1.0 with an explicit close, so the server ends the body at EOF and
+	   we do not have to deal with chunked encoding or keep-alive. */
+	snprintf(req, sizeof(req),
+		"GET /cgi-bin/simstatus.cgi?%s HTTP/1.0\r\n"
+		"Host: %s:%d\r\n"
+		"User-Agent: simController\r\n"
+		"Connection: close\r\n"
+		"\r\n",
+		query, ip, port );
+
+	reqLen = strlen(req );
+	if ( write(fd, req, reqLen ) != (ssize_t)reqLen )
+	{
+		close(fd );
+		return ( NULL );
+	}
+
+	while ( total < ( sizeof(httpRespBuf) - 1 ) )
+	{
+		n = read(fd, &httpRespBuf[total], ( sizeof(httpRespBuf) - 1 ) - total );
+		if ( n <= 0 )
+		{
+			break;		/* EOF, timeout or error */
+		}
+		total += (size_t)n;
+	}
+	close(fd );
+	httpRespBuf[total] = 0;
+
+	if ( total == 0 )
+	{
+		return ( NULL );
+	}
+
+	/* Skip the response headers. Tolerate LF-only line endings just in case. */
+	body = strstr(httpRespBuf, "\r\n\r\n" );
+	if ( body != NULL )
+	{
+		body += 4;
+	}
+	else
+	{
+		body = strstr(httpRespBuf, "\n\n" );
+		if ( body != NULL )
+		{
+			body += 2;
+		}
+		else
+		{
+			body = httpRespBuf;	/* no headers found; treat it all as body */
+		}
+	}
+
+	return ( fmemopen(body, strlen(body), "r" ) );
+}
+
+/*
  * look for updates in sensors and send changes
 */
 struct auscultation 	aus;
@@ -238,90 +389,61 @@ simMgrWrite(void )
 		if ( aus.side != shmData->auscultation.side )
 		{
 			aus.side = shmData->auscultation.side;
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:auscultation:side=%d",
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort,
-				aus.side );
+			sprintf(simctlrWriteCmd, "set:auscultation:side=%d", aus.side );
 			do_send++;
 		}
 		else if ( aus.row != shmData->auscultation.row ) 
 		{
 			aus.row = shmData->auscultation.row;
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:auscultation:row=%d", 
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort,
-				aus.row );
+			sprintf(simctlrWriteCmd, "set:auscultation:row=%d", aus.row );
 			do_send++;
 		}
 		else if ( aus.col != shmData->auscultation.col )
 		{
 			aus.col = shmData->auscultation.col;
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:auscultation:col=%d", 
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort,
-				aus.col );
+			sprintf(simctlrWriteCmd, "set:auscultation:col=%d", aus.col );
 			do_send++;
 		}
 		else if ( pul.right_dorsal != shmData->pulse.right_dorsal ) 
 		{
 			pul.right_dorsal = shmData->pulse.right_dorsal;
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:pulse:right_dorsal=%d",
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort,
-				pul.right_dorsal );
+			sprintf(simctlrWriteCmd, "set:pulse:right_dorsal=%d", pul.right_dorsal );
 			do_send++;
 		}
 		else if ( pul.left_dorsal != shmData->pulse.left_dorsal ) 
 		{
 			pul.left_dorsal = shmData->pulse.left_dorsal;
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:pulse:left_dorsal=%d",
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort,
-				pul.left_dorsal );
+			sprintf(simctlrWriteCmd, "set:pulse:left_dorsal=%d", pul.left_dorsal );
 			do_send++;
 		}
 		else if ( pul.right_femoral != shmData->pulse.right_femoral ) 
 		{
 			pul.right_femoral = shmData->pulse.right_femoral;
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:pulse:right_femoral=%d",
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort,
-				pul.right_femoral );
+			sprintf(simctlrWriteCmd, "set:pulse:right_femoral=%d", pul.right_femoral );
 			do_send++;
 		}
 		else if ( pul.left_femoral != shmData->pulse.left_femoral ) 
 		{
 			pul.left_femoral = shmData->pulse.left_femoral;
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:pulse:left_femoral=%d",
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort,
-				pul.left_femoral );
+			sprintf(simctlrWriteCmd, "set:pulse:left_femoral=%d", pul.left_femoral );
 			do_send++;
 		}
 
 		else if ( shmData->respiration.manual_breath )
 		{
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:respiration:manual_breath=1",
-				shmData->simMgrIPAddr,
-				shmData->simMgrStatusPort );
+			sprintf(simctlrWriteCmd, "set:respiration:manual_breath=1");
 			shmData->respiration.manual_breath = 0;
 			do_send++;
 		}
 		else if ( cpr.compression != shmData->cpr.compression )
 		{
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:cpr:compression=%d",
-				shmData->simMgrIPAddr, 
-				shmData->simMgrStatusPort, 
-				shmData->cpr.compression );
+			sprintf(simctlrWriteCmd, "set:cpr:compression=%d", shmData->cpr.compression );
 			cpr.compression = shmData->cpr.compression;
 			do_send++;
 		}
 		else if ( cpr.release != shmData->cpr.release )
 		{
-			sprintf(simctlrWriteCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:cpr:release=%d",
-				shmData->simMgrIPAddr, 
-				shmData->simMgrStatusPort,
-				shmData->cpr.release );
+			sprintf(simctlrWriteCmd, "set:cpr:release=%d", shmData->cpr.release );
 			cpr.release = shmData->cpr.release;
 			do_send++;
 		}
@@ -335,11 +457,19 @@ simMgrWrite(void )
 		if ( do_send )
 		{
 			//log_message("", simctlrWriteCmd );
-			pipe = popen(simctlrWriteCmd, "r" );
+			pipe = simMgrHttpGet(shmData->simMgrIPAddr, shmData->simMgrStatusPort,
+			                     simctlrWriteCmd );
 			if ( !pipe )
 			{
-				perror("popen" );
-				exit ( 1 );
+				/* Was: perror("popen"); exit(1).  Do NOT exit here — a failed
+				   status report is not fatal, and killing simController takes
+				   the whole controller down with it (every other daemon depends
+				   on the shared memory it owns).  The manager may simply be
+				   restarting or off; the next pass will retry. */
+				snprintf(msgbuf, BUF_LEN_MAX,
+					"simMgrWrite: could not reach manager at %s:%d",
+					shmData->simMgrIPAddr, shmData->simMgrStatusPort );
+				log_message("", msgbuf );
 			}
 			else
 			{
@@ -348,7 +478,7 @@ simMgrWrite(void )
 					// Could parse the return, but not really needed.
 					//log_message("", msgbuf );
 				}
-				pclose(pipe );
+				fclose(pipe );
 			}
 		}
 		else
@@ -427,15 +557,15 @@ simMgrSyncTime(void)
 	int len;
 	int i;
 
-	/* The simMgrIPAddr is always set via inet_ntop() and therefore contains
-	 * only digits and dots — no shell metacharacters are possible here.      */
-	snprintf(buff, sizeof(buff), "curl  %s:%d/cgi-bin/simstatus.cgi?date=1",
-	         shmData->simMgrIPAddr, shmData->simMgrStatusPort );
+	/* No shell involved any more — simMgrHttpGet() connects directly, so the
+	 * question of shell metacharacters in the IP no longer arises.           */
+	snprintf(buff, sizeof(buff), "date=1");
 
-	pipe1 = popen(buff, "r" );
+	pipe1 = simMgrHttpGet(shmData->simMgrIPAddr, shmData->simMgrStatusPort, buff );
 	if ( !pipe1 )
 	{
-		snprintf(buff, sizeof(buff), "simMgrSyncTime: popen failed: %s", strerror(errno) );
+		snprintf(buff, sizeof(buff), "simMgrSyncTime: could not reach manager at %s:%d",
+			shmData->simMgrIPAddr, shmData->simMgrStatusPort );
 		syslog(LOG_DAEMON | LOG_NOTICE, "%s", buff );
 		return ( -1 );
 	}
@@ -538,7 +668,7 @@ simMgrSyncTime(void)
 			}
 		}
 	}
-	pclose(pipe1 );
+	fclose(pipe1 );
 	return ( rval );
 }
 
@@ -553,13 +683,20 @@ simMgrRead(void )
 	char name[128];
 	char value[128];
 	
-	sprintf(simctlrReadCmd, "curl  %s:%d/cgi-bin/simstatus.cgi?simctrldata=1", shmData->simMgrIPAddr, shmData->simMgrStatusPort );
+	sprintf(simctlrReadCmd, "simctrldata=1");
 
-	pipe = popen(simctlrReadCmd, "r" );
+	pipe = simMgrHttpGet(shmData->simMgrIPAddr, shmData->simMgrStatusPort,
+	                     simctlrReadCmd );
 	if ( !pipe )
 	{
-		perror("popen" );
-		exit ( 1 );
+		/* Was: perror("popen"); exit(1).  Never exit here — simController owns
+		   the shared memory every other daemon attaches to, so exiting takes
+		   the entire controller down over one unreachable status poll.  The
+		   manager may be restarting; the caller polls again shortly. */
+		snprintf(msgbuf, BUF_LEN_MAX,
+			"simMgrRead: could not reach manager at %s:%d",
+			shmData->simMgrIPAddr, shmData->simMgrStatusPort );
+		log_message("", msgbuf );
 	}
 	else
 	{
@@ -627,7 +764,7 @@ simMgrRead(void )
 			}
 
 		}
-		pclose(pipe );
+		fclose(pipe );
 	}
 }
 
