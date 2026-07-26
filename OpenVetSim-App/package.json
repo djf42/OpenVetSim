@@ -17,7 +17,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "loading.html"
+      "loading.html",
+      "controller-survey.js",
+      "survey-preload.js"
     ],
     "extraResources": [
       {
@@ -120,7 +122,8 @@
     }
   },
   "dependencies": {
-    "qrcode": "^1.5.3"
+    "qrcode": "^1.5.3",
+    "ssh2": "^1.15.0"
   },
   "devDependencies": {
     "@electron/notarize": "^3.1.1",

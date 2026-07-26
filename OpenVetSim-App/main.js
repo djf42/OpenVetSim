@@ -10,6 +10,9 @@ const http   = require('http');
 const fs     = require('fs');
 const os     = require('os');
 
+// Read-only survey of the BeagleBone controller — see controller-survey.js
+const { surveyController } = require('./controller-survey');
+
 // ─── Configuration ────────────────────────────────────────────────────────────
 const PORT_STATUS = 40845;
 const PORT_PHP    = 8081;
@@ -597,6 +600,11 @@ function buildMenu() {
     { type: 'separator' },
     { label: 'Open in Browser', click: () => shell.openExternal(PHP_URL) },
     { label: 'Connect Phone or Tablet…', click: showRemoteQR },
+    { type: 'separator' },
+    {
+      label: 'Survey Sim Controller…',
+      click: () => surveyController(mainWin, PORT_STATUS),
+    },
     { type: 'separator' },
     {
       label: 'Copy Video Log Path',
