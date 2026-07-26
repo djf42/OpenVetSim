@@ -29,6 +29,8 @@ const { BrowserWindow, dialog, clipboard, safeStorage, app, ipcMain } = require(
 const fs   = require('fs');
 const path = require('path');
 const http = require('http');
+const net  = require('net');
+const os   = require('os');
 
 const SSH_PORT       = 22;
 const CONNECT_TIMEOUT = 10000;   // ms — units may be off or unreachable
@@ -70,6 +72,26 @@ const SURVEY = [
   { key: 'service',   label: 'simctl service',     cmd: 'systemctl is-active simctl 2>/dev/null || echo unknown' },
   { key: 'daemons',   label: 'Running daemons',    cmd: "ps -eo comm= | grep -E 'simController|soundSense|rfidScan|breathSense|cprScan|^pulse$' | sort | uniq -c | awk '{print $2}' | tr '\\n' ' '" },
   { key: 'tags',      label: 'RFID tag count',     cmd: "grep -c '<tagId>' /simulator/rfid.xml 2>/dev/null || echo 'no rfid.xml'" },
+
+  // Is this a real per-manikin tag table, or the repository default?
+  //
+  // /simulator/rfid.xml maps the RFID tags physically embedded in one specific
+  // manikin and cannot be reconstructed. A unit running the repo default has
+  // effectively lost its table — the stethoscope will not recognise its own pads.
+  // The count alone cannot distinguish the two, because the default also has
+  // plausible-looking IDs.
+  //
+  // The pristine default (sim-ctl-master/initialization/rfid.xml) is:
+  //     md5          72440faf98c725fc0ae9d41cdf7ca591
+  //     tag count    52
+  //     first descriptions   TestTag1, TestTag2
+  //
+  // A matching md5 means the file was never customised. "TestTag" in the first
+  // descriptions is a strong signal even if the file was edited afterwards.
+  { key: 'rfidfp',    label: 'RFID table identity',
+    cmd: "( md5sum /simulator/rfid.xml 2>/dev/null | cut -d' ' -f1 | sed 's/^/md5 /' ; " +
+         "grep -o '<description>[^<]*' /simulator/rfid.xml 2>/dev/null | head -2 " +
+         "| sed 's|<description>|first: |' ) || echo '(no rfid.xml)'" },
   { key: 'simmgr',    label: 'simmgrName',         cmd: "grep -vE '^\\s*#|^\\s*$' /simulator/simmgrName 2>/dev/null | head -2" },
   { key: 'uptime',    label: 'Uptime',             cmd: 'uptime -p 2>/dev/null || uptime' },
   { key: 'disk',      label: 'Disk free',          cmd: "df -h / | awk 'NR==2 {print $4 \" free of \" $2}'" },
@@ -151,6 +173,74 @@ function detectControllerIP(statusPort) {
   });
 }
 
+// ─── Subnet scan ──────────────────────────────────────────────────────────────
+//
+// Finds candidate controllers by probing SSH across the local /24.
+//
+// Why this is needed: detectControllerIP() only sees controllers that have
+// successfully connected to the simulation manager. A controller that cannot
+// connect — old firmware looking for the legacy port on a manager that does not
+// offer it, a wrong simmgrName, a subnet mismatch — never appears there. Those
+// are precisely the units we most need to inspect, so the survey must be able
+// to find a controller that is not talking to us.
+//
+// Probing port 22 is a reasonable proxy: every BeagleBone image runs sshd. It
+// will also match other Linux hosts on the subnet, so results are presented as
+// candidates rather than confirmed controllers.
+
+function probeSSH(host, timeout = 400) {
+  return new Promise((resolve) => {
+    const sock = new net.Socket();
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      sock.destroy();
+      resolve(ok ? host : null);
+    };
+    sock.setTimeout(timeout);
+    sock.once('connect', () => finish(true));
+    sock.once('timeout', () => finish(false));
+    sock.once('error',   () => finish(false));
+    sock.connect(22, host);
+  });
+}
+
+function localSubnets() {
+  const out = [];
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const a of ifaces[name] || []) {
+      if (a.family !== 'IPv4' || a.internal) continue;
+      const parts = a.address.split('.');
+      if (parts.length !== 4) continue;
+      out.push({ prefix: parts.slice(0, 3).join('.'), self: parseInt(parts[3], 10) });
+    }
+  }
+  return out;
+}
+
+async function scanForControllers(onProgress) {
+  const found = [];
+  for (const sub of localSubnets()) {
+    // Probe in batches to keep socket usage reasonable while staying quick.
+    const BATCH = 32;
+    for (let start = 1; start < 255; start += BATCH) {
+      const batch = [];
+      for (let i = start; i < Math.min(start + BATCH, 255); i++) {
+        if (i === sub.self) continue;            // skip ourselves
+        batch.push(probeSSH(`${sub.prefix}.${i}`));
+      }
+      if (onProgress) {
+        onProgress(Math.min(start + BATCH - 1, 254), 254, sub.prefix);
+      }
+      const results = await Promise.all(batch);
+      for (const r of results) if (r) found.push(r);
+    }
+  }
+  return found;
+}
+
 // ─── Credential prompt ────────────────────────────────────────────────────────
 
 function promptCredentials(parentWin, defaultHost, saved) {
@@ -180,12 +270,25 @@ function promptCredentials(parentWin, defaultHost, saved) {
       .cx { background:#334155; color:#e2e8f0; }
       .cx:hover { background:#475569; }
       .note { color:#64748b; font-size:11px; margin-top:10px; line-height:1.4; }
+      .findrow { font-size:11px; margin:-8px 0 12px; display:flex; justify-content:space-between; gap:8px; }
+      .findrow a { color:#60a5fa; text-decoration:none; }
+      .findrow a:hover { text-decoration:underline; }
+      .ok   { color:#4ade80; }
+      .warn { color:#fbbf24; }
+      #scanstatus { margin:-8px 0 10px; }
     </style></head><body>
       <h1>Survey Sim Controller</h1>
       <p class="sub">Reads configuration details from the controller. Nothing is written or changed.</p>
 
       <label>Controller address</label>
       <input type="text" id="host" value="${(defaultHost || '').replace(/"/g, '&quot;')}" placeholder="192.168.1.50">
+      <p class="findrow">
+        ${defaultHost
+          ? '<span class="ok">Detected from the connected controller.</span>'
+          : '<span class="warn">No connected controller detected.</span>'}
+        <a href="#" onclick="findThem(); return false;">Scan network…</a>
+      </p>
+      <p id="scanstatus" class="note"></p>
 
       <label>Username</label>
       <input type="text" id="user" value="${(saved && saved.username) || 'debian'}">
@@ -215,6 +318,37 @@ function promptCredentials(parentWin, defaultHost, saved) {
           });
         }
         function cancel() { send(null); }
+
+        // Scan the local subnet for hosts with SSH open — used when no
+        // controller is connected, so we cannot learn its address from
+        // the simulation manager.
+        async function findThem() {
+          const s = document.getElementById('scanstatus');
+          s.textContent = 'Scanning local network…';
+          s.className = 'note';
+          try {
+            const hosts = await window.surveyBridge.scan();
+            if (!hosts.length) {
+              s.textContent = 'No hosts with SSH found. Check the controller is powered on and on this network.';
+              s.className = 'note warn';
+              return;
+            }
+            const host = document.getElementById('host');
+            if (!host.value) host.value = hosts[0];
+            s.innerHTML = 'Found: ' + hosts.map((h) =>
+              '<a href="#" onclick="pick(\\'' + h + '\\'); return false;">' + h + '</a>'
+            ).join(' &nbsp; ') + '<br>These are hosts running SSH — not all are controllers.';
+            s.className = 'note';
+          } catch (err) {
+            s.textContent = 'Scan failed: ' + err;
+            s.className = 'note warn';
+          }
+        }
+        function pick(h) {
+          document.getElementById('host').value = h;
+          document.getElementById('pass').focus();
+        }
+
         document.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') go();
           if (e.key === 'Escape') cancel();
@@ -441,6 +575,12 @@ function showResults(parentWin, host, report, logPath) {
   win.setMenu(null);
   win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 }
+
+// Subnet scan, invoked from the credential prompt
+ipcMain.handle('survey-scan', async () => {
+  try { return await scanForControllers(); }
+  catch { return []; }
+});
 
 // Clipboard / save handlers used by the results window
 ipcMain.on('survey-copy', (_e, text) => clipboard.writeText(text));

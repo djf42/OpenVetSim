@@ -134,9 +134,16 @@ std::mutex pulseSema;
 //   - Does a "breath" message land immediately before a delayed heart sound?
 //     (If so, the controller is serializing breath handling ahead of the beat,
 //     and the fix belongs in the firmware, not here.)
-// Roughly 2-4 lines/second at typical rates -- fine for a diagnostic run.
-// Set to 0 to silence.
-int beatTraceEnabled = 1;
+// Roughly 2-4 lines/second at typical rates -- fine for a diagnostic run, but
+// far too chatty to leave on in production: log_message() opens, writes and
+// closes a file AND printfs on every call, so this would write several times a
+// second for the entire life of a session.
+//
+// Left at 0 for normal use.  Set to 1 when investigating beat timing; the
+// BEAT-JITTER outlier lines below are always active regardless, and those are
+// what you actually want in the field -- they only appear when something is
+// wrong.
+int beatTraceEnabled = 0;
 
 /*
  * Beat trace ring buffer.
@@ -637,46 +644,159 @@ pulseTask(void )
 		return false;
 	}
 
-	SOCKADDR_IN addr;                     // The address structure for a TCP socket
+	/*
+	 * Listen on BOTH the current and the original (Linux-era) pulse ports.
+	 *
+	 * The controller initiates the connection: it scans the local subnet
+	 * (x.x.x.1 .. .254) trying to TCP-connect on a fixed port.  Which port it
+	 * tries depends on how old its firmware is:
+	 *
+	 *     LINUX_SYNC_PORT  50200   original Linux-only releases
+	 *     WVS_SYNC_PORT    40844   from the 2020 Windows port onward
+	 *
+	 * Current controller firmware scans both.  Older firmware scans 50200 only,
+	 * so it can never find a modern simulation manager that listens only on
+	 * 40844 — the connection has to come from the controller, so there is
+	 * nothing the manager can do to redirect it.
+	 *
+	 * Binding the legacy port as well makes those units work with no firmware
+	 * change and no configuration by the user.  That matters because most
+	 * controllers in the field are owned by other institutions and cannot be
+	 * updated on our schedule.
+	 *
+	 * Both sockets feed the same listeners[] table.  A single select() loop
+	 * accepts from either, which avoids a second accept thread racing over
+	 * listener-slot allocation.
+	 */
+#define LEGACY_PORT_PULSE	50200	// original Linux-era port; see above
 
-	addr.sin_family = AF_INET;            // Address family
-	addr.sin_port = htons(portno);       // Assign port to this socket
+	SOCKET listenFds[2];
+	int    listenPorts[2];
+	int    listenCount = 0;
 
-    //Accept a connection from any IP using INADDR_ANY
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	// Opens a listening socket on 'port'.  Returns INVALID_SOCKET on failure.
+	// 'required' distinguishes the primary port (fatal if it fails) from the
+	// legacy port (best-effort: warn and carry on).
+	auto openListenSocket = [](int port, bool required) -> SOCKET
+	{
+		SOCKADDR_IN a;
+		a.sin_family = AF_INET;
+		a.sin_port = htons(port);
+		a.sin_addr.s_addr = htonl(INADDR_ANY);   // accept from any IP
 
-	sfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); // Create socket
+		SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (s == INVALID_SOCKET)
+		{
+			if (required) cout << "pulseProcess - socket(): INVALID_SOCKET " << GetLastErrorAsString();
+			return INVALID_SOCKET;
+		}
 
+		int enableKeepAlive = 1;
+		setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (const char*)&enableKeepAlive, sizeof(enableKeepAlive));
+
+		if (::bind(s, (LPSOCKADDR)&a, sizeof(a)) == SOCKET_ERROR)
+		{
+			if (required)
+			{
+				cout << "pulseProcess - bind(): SOCKET_ERROR " << GetLastErrorAsString();
+			}
+			else
+			{
+				// 50200 is in the dynamic range, so an unrelated program may hold
+				// it.  Not fatal: we simply lose support for legacy controllers.
+				sprintf_s(p_msg, BUF_SIZE,
+					"Legacy pulse port %d unavailable - controllers running "
+					"pre-2020 firmware will not be able to connect", port);
+				log_message("", p_msg);
+			}
+			closesocket(s);
+			return INVALID_SOCKET;
+		}
+
+		if (listen(s, SOMAXCONN) == SOCKET_ERROR)
+		{
+			if (required) printf("Listen failed with error: %lu\n", WSAGetLastError());
+			closesocket(s);
+			return INVALID_SOCKET;
+		}
+		return s;
+	};
+
+	// Primary port — if this fails we cannot run.
+	sfd = openListenSocket(portno, true);
 	if (sfd == INVALID_SOCKET)
 	{
-		cout << "pulseProcess - socket(): INVALID_SOCKET " << GetLastErrorAsString();
-		return false;                     //Don't continue if we couldn't create a //socket!!
-	}
-
-	int enableKeepAlive = 1;
-	setsockopt(sfd, SOL_SOCKET, SO_KEEPALIVE, (const char*)&enableKeepAlive, sizeof(enableKeepAlive));
-
-	if ( ::bind(sfd, (LPSOCKADDR)&addr, sizeof(addr)) == SOCKET_ERROR )
-	{
-		//We couldn't bind (this will happen if you try to bind to the same  
-		//socket more than once)
-		cout << "pulseProcess - bind(): SOCKET_ERROR " << GetLastErrorAsString();
-		return false;
-	}
-
-	int listen_result = listen(sfd, SOMAXCONN);
-	if (listen_result == SOCKET_ERROR)
-	{
-		printf("Listen failed with error: %lu\n", WSAGetLastError());
-		closesocket(sfd);
 		WSACleanup();
 		return false;
 	}
+	listenFds[listenCount]   = sfd;
+	listenPorts[listenCount] = portno;
+	listenCount++;
+
+	// Legacy port — best effort, and skipped if it is already the primary.
+	if (portno != LEGACY_PORT_PULSE)
+	{
+		SOCKET legacyFd = openListenSocket(LEGACY_PORT_PULSE, false);
+		if (legacyFd != INVALID_SOCKET)
+		{
+			listenFds[listenCount]   = legacyFd;
+			listenPorts[listenCount] = LEGACY_PORT_PULSE;
+			listenCount++;
+		}
+	}
+
+	for (int li = 0; li < listenCount; li++)
+	{
+		sprintf_s(p_msg, BUF_SIZE, "Pulse listening on port %d%s",
+			listenPorts[li],
+			(listenPorts[li] == LEGACY_PORT_PULSE) ? " (legacy controllers)" : "");
+		log_message("", p_msg);
+	}
+
 	socklen = sizeof(struct sockaddr_in);
 
 	while (1)
 	{
-		cfd = accept(sfd, (struct sockaddr*)&client_addr, &socklen);
+		// Wait for an incoming connection on any listening port.
+		fd_set readFds;
+		FD_ZERO(&readFds);
+		SOCKET maxFd = 0;
+		for (int li = 0; li < listenCount; li++)
+		{
+			FD_SET(listenFds[li], &readFds);
+			if (listenFds[li] > maxFd) maxFd = listenFds[li];
+		}
+
+		// 1 s timeout so the loop stays responsive rather than blocking forever.
+		struct timeval selTimeout;
+		selTimeout.tv_sec  = 1;
+		selTimeout.tv_usec = 0;
+
+		int ready = select((int)(maxFd + 1), &readFds, NULL, NULL, &selTimeout);
+		if (ready <= 0)
+		{
+			continue;	// timeout, or interrupted — nothing waiting
+		}
+
+		// Accept from whichever socket is ready.  Take one per pass so a busy
+		// port cannot starve the other.
+		cfd = INVALID_SOCKET;
+		for (int li = 0; li < listenCount; li++)
+		{
+			if (FD_ISSET(listenFds[li], &readFds))
+			{
+				cfd = accept(listenFds[li], (struct sockaddr*)&client_addr, &socklen);
+				if (cfd >= 0)
+				{
+					sprintf_s(p_msg, BUF_SIZE, "Controller connected on port %d%s",
+						listenPorts[li],
+						(listenPorts[li] == LEGACY_PORT_PULSE) ? " (legacy firmware)" : "");
+					log_message("", p_msg);
+				}
+				break;
+			}
+		}
+
 		if (cfd >= 0)
 		{
 			// Limit TCP retransmit time so a hard power-off is detected quickly.
