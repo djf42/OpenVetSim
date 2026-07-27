@@ -336,7 +336,12 @@ from the mac section — make sure `WinVetSim.exe` exists there before packaging
 
 ## Current Version
 
-**v2.6.0** — ECG improvements + ETCO₂ waveform types
+**v2.6.2** — heart beat timing fixes; requires matching controller firmware
+
+> **v2.6.2 needs the controller updated too.** The fix is split across both ends
+> and neither half is sufficient alone — see "Controller firmware must be updated
+> together with the PC software" under Gotchas, and
+> `CONTROLLER_UPDATE_CHECKLIST.md`.
 
 ### Release history
 - v1.0.0 — initial release (arm64 only)
@@ -344,6 +349,30 @@ from the mac section — make sure `WinVetSim.exe` exists there before packaging
 - v1.2.0 — universal binary (arm64 + Intel), Copy Video Log Path menu item, macOS code signing + notarization
 - v2.5.0 — collaborator C++ updates (VetSim, pulse, scenario, simstatus, and others)
 - v2.6.0 — ECG improvements (afib rate fix, dynamic resampling, peak preservation, pre-computed VFib waveforms) + ETCO₂ waveform types (normal, rebreathing, obstructive/shark-fin, curare cleft) with instructor UI dialog
+- v2.6.1 — asystole waveform fix (flat line now displays correctly when asystole is selected)
+- v2.6.2 — **heart beat timing.** Beats are now scheduled against
+  `QueryPerformanceCounter` rather than `GetTickCount64`, whose 15.625 ms
+  resolution was quantizing them onto a grid that aliased against the beat
+  interval (exact at 120 and 240 BPM, worst at 150). Also: `timeBeginPeriod(1)`
+  is finally called at startup; `SetThreadPriority` is real on POSIX instead of
+  a no-op stub; controller sockets are drained so the controller's liveness
+  bytes cannot fill our receive buffer and force a reconnect; the legacy pulse
+  port 50200 is bound alongside 40844 for pre-2020 controller firmware, with
+  duplicate connections from the same controller refused; `TCP_NODELAY` set on
+  controller sockets; browser URLs no longer built from the `0.0.0.0` bind
+  address (broke `npm start` and the PHP health check on Windows); read-only
+  Sim Controller survey added to the Simulator menu.
+
+  Controller side (`sim-ctl-master`): beat arrival is timestamped so the lub
+  fires relative to arrival rather than to when the polling loop noticed it,
+  sound loop reduced 20 ms → 2 ms, forced gain refreshes throttled, sound path
+  runs `SCHED_FIFO`, and `popen("curl ...")` replaced with a direct HTTP GET so
+  offline controllers need no external tools.
+
+  **Also requires wired Ethernet or 5 GHz Wi-Fi** for the simulation manager —
+  2.4 GHz produces multi-second dropouts. On macOS, `awdl0` (AirDrop/Handoff)
+  periodically takes the radio off-channel and must be down for Wi-Fi to be
+  usable: `sudo ifconfig awdl0 down`.
 
 ---
 
