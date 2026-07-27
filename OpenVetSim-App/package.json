@@ -5,6 +5,7 @@
   "description": "Open Veterinary Simulation Manager",
   "main": "main.js",
   "scripts": {
+    "postinstall": "node scripts/fixElectronMac.js",
     "start": "electron .",
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac --universal",

@@ -102,6 +102,7 @@ struct listener
 	SOCKET cfd;
 	char ipAddr[32];
 	char version[32];
+	int port;			// which listening port this connection arrived on
 };
 #define MAX_LISTENERS 10
 
@@ -626,6 +627,7 @@ pulseTask(void )
 	for (i = 0; i < MAX_LISTENERS; i++)
 	{
 		listeners[i].allocated = 0;
+		listeners[i].port = 0;
 		simmgr_shm->simControllers[i].allocated = 0;
 	}
 
@@ -781,6 +783,7 @@ pulseTask(void )
 		// Accept from whichever socket is ready.  Take one per pass so a busy
 		// port cannot starve the other.
 		cfd = INVALID_SOCKET;
+		int acceptedPort = 0;
 		for (int li = 0; li < listenCount; li++)
 		{
 			if (FD_ISSET(listenFds[li], &readFds))
@@ -788,6 +791,7 @@ pulseTask(void )
 				cfd = accept(listenFds[li], (struct sockaddr*)&client_addr, &socklen);
 				if (cfd >= 0)
 				{
+					acceptedPort = listenPorts[li];
 					sprintf_s(p_msg, BUF_SIZE, "Controller connected on port %d%s",
 						listenPorts[li],
 						(listenPorts[li] == LEGACY_PORT_PULSE) ? " (legacy firmware)" : "");
@@ -871,8 +875,42 @@ pulseTask(void )
 			{
 				if (listeners[i].allocated == 1 && strcmp(newIpAddr, simmgr_shm->simControllers[i].ipAddr) == 0)
 				{
+					/*
+					 * Same controller already connected.
+					 *
+					 * Current controller firmware scans BOTH pulse ports, so now
+					 * that we listen on both it can connect twice - once on 40844
+					 * and again on 50200.  Treating the second as a "reopen" would
+					 * close a perfectly good socket and replace it, churning the
+					 * connection on every scan cycle and dropping beats each time.
+					 *
+					 * A duplicate arriving on the LEGACY port while the existing
+					 * connection is on the primary port is exactly that case:
+					 * refuse it and keep what works.  The legacy port exists only
+					 * for firmware too old to try 40844 at all.
+					 *
+					 * Any other duplicate (same port, or primary superseding
+					 * legacy) is a genuine reconnect - the controller restarted
+					 * and the old socket is stale - so replace it as before.
+					 */
+					if (acceptedPort == LEGACY_PORT_PULSE &&
+						listeners[i].port != 0 &&
+						listeners[i].port != LEGACY_PORT_PULSE)
+					{
+						sprintf_s(p_msg, BUF_SIZE,
+							"Ignoring duplicate legacy-port connection from %s; "
+							"already connected on port %d",
+							newIpAddr, listeners[i].port);
+						log_message("", p_msg);
+						closesocket(cfd);
+						cfd = INVALID_SOCKET;
+						found = 1;		// handled; do not allocate a new slot
+						break;
+					}
+
 					closesocket(listeners[i].cfd);
 					listeners[i].cfd = cfd;
+					listeners[i].port = acceptedPort;
 					found = 1;
 					printf("ReOpened: %s\n", newIpAddr);
 					// Send the Status Port Number to the listener
@@ -890,6 +928,7 @@ pulseTask(void )
 						listeners[i].allocated = 1;
 						listeners[i].cfd = cfd;
 						listeners[i].thread_no = i;
+						listeners[i].port = acceptedPort;	// used to spot duplicate connections
 						simmgr_shm->simControllers[i].allocated = 1;
 						sprintf_s(simmgr_shm->simControllers[i].ipAddr, STR_SIZE, "%d.%d.%d.%d",
 							client_addr.sa_data[2] & 0xff,
@@ -967,6 +1006,81 @@ sendStatusPort(int listener)
  *		This process monitors the pulse and breath counts. When incremented (by the beat_handler)
  *		a message is sent to the listeners.
 */
+/*
+ * FUNCTION: drainListeners
+ *
+ * DESCRIPTION:
+ *		Read and discard anything the controllers have sent us.
+ *
+ *		WHY THIS IS NECESSARY
+ *		---------------------
+ *		The controller's receive loop (sim-ctl-master/comm/simCtlComm.cpp,
+ *		simCtlComm::wait) leaves its socket non-blocking and, on every read that
+ *		returns no data, writes a single 'P' byte back to us as a liveness test:
+ *
+ *		    buffer[0] = 'P';
+ *		    len = write(commFD, buffer, 1);
+ *		    if ((len < 0) || (errno == EPIPE)) { this->openListen(1); }
+ *
+ *		It then sleeps 1 ms and repeats, so an idle controller sends us roughly
+ *		1000 bytes per second.  We only ever send on these sockets -- nothing
+ *		here consumed that data -- so our receive buffer filled, TCP advertised
+ *		a zero window, and the controller's write() eventually failed.  Seeing
+ *		the failure, the controller tore the connection down and reopened it.
+ *
+ *		The visible symptom was intermittent skipped beats: "Close listener 0"
+ *		followed by beats being broadcast to zero listeners until the controller
+ *		reconnected.  How long it took to happen depended on the host's default
+ *		TCP receive buffer size and window auto-tuning, which is why it appeared
+ *		on macOS while the same router and controller looked fine from Windows.
+ *
+ *		Draining costs nothing (about 50 bytes per call at a 50 ms cadence) and
+ *		is done from pulseProcessChild, which runs at normal priority, so the
+ *		beat path is untouched.
+ *
+ *		Closure is deliberately NOT handled here.  broadcast_word() already owns
+ *		clearing a listener slot, and doing it from two threads would race.  A
+ *		peer that has gone away will fail the next send and be cleaned up there.
+*/
+static void
+drainListeners(void)
+{
+	int i;
+	char junk[512];
+
+	for (i = 0; i < MAX_LISTENERS; i++)
+	{
+		if (listeners[i].allocated != 1)
+		{
+			continue;
+		}
+		SOCKET fd = listeners[i].cfd;
+
+		// Bounded so a misbehaving peer cannot hold this loop.  At ~1 KB/s and a
+		// 50 ms cadence there are only ~50 bytes waiting, so one pass is plenty.
+		int guard = 0;
+		while (guard++ < 64)
+		{
+			fd_set rd;
+			struct timeval tv;
+
+			FD_ZERO(&rd);
+			FD_SET(fd, &rd);
+			tv.tv_sec = 0;
+			tv.tv_usec = 0;			// poll only, never block
+
+			if (select((int)(fd + 1), &rd, NULL, NULL, &tv) <= 0)
+			{
+				break;				// nothing waiting
+			}
+			if (recv(fd, junk, sizeof(junk), 0) <= 0)
+			{
+				break;				// closed or error; broadcast_word will notice
+			}
+		}
+	}
+}
+
 int
 broadcast_word(char* word)
 {
@@ -1003,6 +1117,7 @@ broadcast_word(char* word)
 				printf("Close listener %d\n", i);
 				closesocket(fd);
 				listeners[i].allocated = 0;
+				listeners[i].port = 0;
 				simmgr_shm->simControllers[i].allocated = 0;
 			}
 			else
@@ -1252,6 +1367,11 @@ pulseProcessChild(void)
 		// Flush any beat trace records recorded by the time-critical broadcast
 		// thread.  Done here so the file I/O never happens on the beat path.
 		beatTraceDrain();
+
+		// Consume the controllers' liveness bytes.  Without this our receive
+		// buffer fills, the controller's write() fails, and it reconnects --
+		// dropping beats until it does.  See drainListeners() for detail.
+		drainListeners();
 
 		if (strcmp(simmgr_shm->status.scenario.state, "Running") == 0)
 		{

@@ -69,6 +69,24 @@ const SURVEY = [
   // Fallback identification: the usage string differs between the two source
   // trees, so it distinguishes them even when no version is reported.
   { key: 'soundver',  label: 'soundSense build',   cmd: '/usr/local/bin/soundSense -h 2>&1 | head -3' },
+  // Runtime prerequisites for sim-ctl-master.
+  //
+  // curl is the one that matters and is easy to miss: sim-ctl-master shells out
+  // to the SYSTEM curl for every sensor event and status poll —
+  //     sprintf(cmd, "curl  %s:%d/cgi-bin/simstatus.cgi?set:auscultation:side=%d", ...)
+  // whereas the older sim-ctl tree used its own bundled simCurl wrapper. A unit
+  // upgraded from the old tree onto a stock image without curl installed would
+  // start cleanly and then silently fail to report auscultation, pulse
+  // palpation and CPR back to the simulation manager.
+  //
+  // nginx serves ctlstatus.cgi, which is how the manager reads the controller
+  // version. libgpiod runtime is covered by the soname check above.
+  { key: 'prereq',    label: 'Runtime prerequisites',
+    cmd: "for c in curl wget nginx; do " +
+         "  if command -v $c >/dev/null 2>&1; then echo \"$c: $(command -v $c)\"; " +
+         "  else echo \"$c: MISSING\"; fi; done; " +
+         "echo \"nginx running: $(systemctl is-active nginx 2>/dev/null || echo unknown)\"" },
+
   { key: 'service',   label: 'simctl service',     cmd: 'systemctl is-active simctl 2>/dev/null || echo unknown' },
   { key: 'daemons',   label: 'Running daemons',    cmd: "ps -eo comm= | grep -E 'simController|soundSense|rfidScan|breathSense|cprScan|^pulse$' | sort | uniq -c | awk '{print $2}' | tr '\\n' ' '" },
   { key: 'tags',      label: 'RFID tag count',     cmd: "grep -c '<tagId>' /simulator/rfid.xml 2>/dev/null || echo 'no rfid.xml'" },

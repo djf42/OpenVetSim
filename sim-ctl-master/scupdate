@@ -1,23 +1,173 @@
 #!/bin/bash
 #
-echo "Sim Controller Update Version 1.1.13"
+# scupdate — install a Sim Controller update from an unpacked SimController.tarz
+#
+# Run as root from the directory containing the unpacked update:
+#     sudo ./scupdate
+#
+# WHAT THIS DOES NOT TOUCH
+# -----------------------
+# /simulator/ is never modified. It holds per-unit configuration — rfid.xml
+# (the RFID tag table, specific to the tags embedded in this manikin and NOT
+# recoverable), simmgrName and soundList.csv. Do not add copies into /simulator
+# here; use the initialization Makefile's "install" target, which guards them.
+#
+# SAFETY
+# ------
+# Previous binaries are backed up before being replaced, the daemons are
+# verified after restart, and if verification fails the backup is restored
+# automatically. A failed update should leave a working controller, because the
+# people running it are often unable to recover one by hand.
+
+SCUPDATE_VERSION="1.2.0"
+
 RED='\033[0;31m'
+GRN='\033[0;32m'
+YEL='\033[0;33m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
+
+say()  { echo -e "$1"; }
+ok()   { echo -e "${GRN}$1${NC}"; }
+warn() { echo -e "${YEL}$1${NC}"; }
+err()  { echo -e "${RED}$1${NC}"; }
+
+echo "Sim Controller Update — scupdate ${SCUPDATE_VERSION}"
 
 if ! id | grep -q root; then
-	echo "must be run as root (use \"sudo scupdate\")"
-	exit
+	err "must be run as root (use \"sudo scupdate\")"
+	exit 1
 fi
 
-echo "stopping simctl service"
+BIN_DIR=/usr/local/bin
+WWW_HTML=/var/www/html
+WWW_CGI=/var/www/cgi-bin
+STAMP=$(date +%Y%m%d-%H%M%S)
+BACKUP_DIR="/var/backups/simctl-${STAMP}"
+
+# The daemons that must be running for a healthy controller. These are also the
+# set verified after restart.
+DAEMONS="simController pulse rfidScan soundSense breathSense cprScan"
+
+# Optional extras: installed if present in the update, ignored if not.
+# sim-ctl-master uses the system curl rather than the bundled simCurl wrapper,
+# and the test tools are not part of a normal build, so none of these are
+# required. Older update bundles may still contain them.
+EXTRAS="simCurl ain_air_test ainmon tsunami_test"
+
+# ─── Work out what this update actually contains ──────────────────────────────
+PRESENT=""
+MISSING=""
+for f in $DAEMONS; do
+	if [ -f "$f" ]; then PRESENT="$PRESENT $f"; else MISSING="$MISSING $f"; fi
+done
+for f in $EXTRAS; do
+	if [ -f "$f" ]; then PRESENT="$PRESENT $f"; fi
+done
+
+if [ -n "$MISSING" ]; then
+	err "This update is incomplete. Missing daemon(s):$MISSING"
+	err "Refusing to install a partial set — mixing daemon versions corrupts"
+	err "shared memory and produces a controller that reads RFID tags but"
+	err "plays no sound. Rebuild the update and try again."
+	exit 1
+fi
+
+say "Installing:$PRESENT"
+
+# ─── Back up what we are about to replace ─────────────────────────────────────
+mkdir -p "$BACKUP_DIR" || { err "could not create $BACKUP_DIR"; exit 1; }
+for f in $PRESENT; do
+	if [ -f "$BIN_DIR/$f" ]; then
+		cp -p "$BIN_DIR/$f" "$BACKUP_DIR/" 2>/dev/null
+	fi
+done
+say "Previous binaries backed up to ${CYAN}${BACKUP_DIR}${NC}"
+
+restore_backup() {
+	warn "Restoring previous binaries from $BACKUP_DIR"
+	for f in $PRESENT; do
+		[ -f "$BACKUP_DIR/$f" ] && cp -pf "$BACKUP_DIR/$f" "$BIN_DIR/$f"
+	done
+	systemctl start simctl >/dev/null 2>&1
+	sleep 4
+}
+
+# ─── Install ──────────────────────────────────────────────────────────────────
+say "Stopping simctl service"
 systemctl stop simctl
+sleep 1
 
-cp ain_air_test ainmon breathSense cprScan pulse rfidScan simController simCurl soundSense tsunami_test /usr/local/bin
-cp -r html/* /var/www/html
-cp *.cgi /var/www/cgi-bin
+FAILED=""
+for f in $PRESENT; do
+	if ! cp -f "$f" "$BIN_DIR/$f"; then
+		FAILED="$FAILED $f"
+	fi
+done
 
-echo "starting simctl service"
+if [ -n "$FAILED" ]; then
+	err "Failed to install:$FAILED"
+	restore_backup
+	err "Update aborted; previous version restored."
+	exit 1
+fi
+
+# Web content — not version-critical, so a failure here is a warning only.
+if [ -d html ]; then
+	cp -r html/* "$WWW_HTML" 2>/dev/null || warn "could not update $WWW_HTML"
+fi
+if ls *.cgi >/dev/null 2>&1; then
+	cp -f *.cgi "$WWW_CGI" 2>/dev/null && chmod ug+s "$WWW_CGI"/*.cgi 2>/dev/null \
+		|| warn "could not update $WWW_CGI"
+fi
+
+# ─── Start and verify ─────────────────────────────────────────────────────────
+say "Starting simctl service"
 systemctl start simctl
 
-echo "Update is complete"
+# The init script launches the daemons in sequence with a 2 s pause after
+# simController, so allow time for all of them to come up before checking.
+sleep 6
+
+NOTRUNNING=""
+for d in $DAEMONS; do
+	pgrep -x "$d" >/dev/null 2>&1 || NOTRUNNING="$NOTRUNNING $d"
+done
+
+if [ -n "$NOTRUNNING" ]; then
+	err "After update, these daemons are not running:$NOTRUNNING"
+	systemctl stop simctl
+	sleep 1
+	restore_backup
+	NOTRUNNING2=""
+	for d in $DAEMONS; do
+		pgrep -x "$d" >/dev/null 2>&1 || NOTRUNNING2="$NOTRUNNING2 $d"
+	done
+	if [ -n "$NOTRUNNING2" ]; then
+		err "Rollback did not fully restore service. Still not running:$NOTRUNNING2"
+		err "Manual recovery needed. Backup is in $BACKUP_DIR"
+		exit 2
+	fi
+	err "Update failed and was rolled back. The controller is running the"
+	err "previous version. Please report this along with the output above."
+	exit 1
+fi
+
+# ─── Report ───────────────────────────────────────────────────────────────────
+ok "All daemons running:$DAEMONS"
+
+if [ -f /simulator/rfid.xml ]; then
+	TAGS=$(grep -c '<tagId>' /simulator/rfid.xml 2>/dev/null)
+	say "RFID tag table intact (${TAGS} tags) — /simulator was not modified"
+else
+	warn "/simulator/rfid.xml not found — the stethoscope will not recognise tags"
+fi
+
+VER=$( ( /var/www/cgi-bin/ctlstatus.cgi 2>/dev/null \
+       || wget -qO- http://127.0.0.1/cgi-bin/ctlstatus.cgi 2>/dev/null ) \
+       | tr ',' '\n' | grep -i simCtlVersion | head -1 | tr -d ' "' )
+[ -n "$VER" ] && say "Controller now reports: ${CYAN}${VER}${NC}"
+
+ok "Update complete"
+say "If anything is wrong, the previous binaries are in ${BACKUP_DIR}"
+exit 0
