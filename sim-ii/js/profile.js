@@ -7,9 +7,13 @@ See gpl.html
 	
 		isVitalsMonitor: false,
 		init: function() {
-			// do we have a valid progile loaded
-			if(typeof scenario.scenarioProfile == 'undefined') {
-				return
+			// Do we have a valid profile loaded? The default is '' (not
+			// undefined), and a profile may lack a controls list, so guard on
+			// the data actually used below rather than just on 'undefined'.
+			if(!scenario.scenarioProfile ||
+			   typeof scenario.scenarioProfile.controls == 'undefined' ||
+			   typeof scenario.scenarioProfile.controls.control == 'undefined') {
+				return;
 			}
 			
 			// set up background image for animal silhouette from profile

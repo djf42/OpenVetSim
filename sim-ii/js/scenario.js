@@ -254,14 +254,56 @@ console.log("Current Scenario State: " + this.currentScenarioState);
 		}
 	},
 	
+	// Display a scenario-load problem to the instructor. Uses the modal popup
+	// when available, and always logs to the console as a fallback.
+	showLoadError: function(cause) {
+		var message = (typeof cause == 'string' && cause.length > 0)
+			? cause
+			: 'The scenario could not be loaded. Please check the scenario file.';
+		console.error('Scenario load failed: ' + message);
+		if(typeof modal != 'undefined' && typeof modal.showText == 'function') {
+			modal.showText('<h1 id="modal-title">Scenario Load Error</h1>' +
+						   '<hr class="modal-divider">' +
+						   '<p style="text-align:left;">' + message + '</p>', 'left');
+		} else {
+			alert(message);
+		}
+	},
+
 	loadScenario: function() {
+		// No scenario selected yet (e.g. at startup, before the sim manager
+		// reports an active scenario). Nothing to load, and not an error.
+		// Leave the scenario data 'undefined' — the various init() guards test
+		// for 'undefined' to decide whether a scenario is loaded, and the
+		// field defaults ('') would otherwise slip past those checks and throw.
+		if(typeof scenario.currentScenarioFileName != 'string' ||
+		   scenario.currentScenarioFileName == '') {
+			scenario.scenarioProfile = undefined;
+			scenario.scenarioHeader  = undefined;
+			scenario.scenarioEvents  = undefined;
+			scenario.scenarioMedia   = undefined;
+			scenario.scenarioVocals  = undefined;
+			return;
+		}
 		$.ajax({
 			url: BROWSER_AJAX + 'ajaxGetScenario.php',
 			type: 'post',
 			async: false,
 			data: {fn: scenario.currentScenarioFileName},
 			dataType: 'json',
+			error: function(jqXHR, textStatus, errorThrown) {
+				scenario.showLoadError('Could not reach the server to load scenario "' +
+									   scenario.currentScenarioFileName + '" (' +
+									   (errorThrown || textStatus) + ').');
+			},
 			success: function(response) {
+				// Stop and report if the server flagged a problem, rather than
+				// silently loading a half-populated interface.
+				if(typeof response == 'undefined' || response == null ||
+				   (typeof response.status != 'undefined' && response.status != AJAX_STATUS_OK)) {
+					scenario.showLoadError(response ? response.cause : '');
+					return;
+				}
 				scenario.scenarioProfile = response.profile;
 				scenario.scenarioHeader = response.header;
 				scenario.scenarioEvents = response.events;

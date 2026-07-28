@@ -64,34 +64,42 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	// update path to scenario
 	$fileName = $fileName . DIRECTORY_SEPARATOR . 'main';
 	
+	// Helper: format a user-facing cause, preferring the specific reason the
+	// parser recorded, and always naming the scenario that failed to load.
+	function scenarioLoadCause($fallback) {
+		global $fileName;
+		$reason = (scenarioXML::$lastError != '') ? scenarioXML::$lastError : $fallback;
+		return "Could not load scenario \"" . dirname($fileName) . "\": " . $reason;
+	}
+
 	$scenarioProfileArray = scenarioXML::getScenarioProfileArray($fileName);
 	if($scenarioProfileArray === FALSE) {
 		$returnVal['status'] = AJAX_STATUS_FAIL;
-		$returnVal['cause'] = "scenarioProfileArray failed";
+		$returnVal['cause'] = scenarioLoadCause("the patient profile could not be read.");
 		echo json_encode($returnVal);
-		exit();		
+		exit();
 	}
 
 	$scenarioHeaderArray = scenarioXML::getScenarioHeaderArray($fileName);
 	if($scenarioHeaderArray === FALSE) {
 		$returnVal['status'] = AJAX_STATUS_FAIL;
-		$returnVal['cause'] = "scenarioHeaderArray failed";
+		$returnVal['cause'] = scenarioLoadCause("the scenario header could not be read.");
 		echo json_encode($returnVal);
-		exit();		
+		exit();
 	}
 
 	$scenarioEventsArray = scenarioXML::getScenarioEventsArray($fileName);
 	if($scenarioEventsArray === FALSE) {
 		$returnVal['status'] = AJAX_STATUS_FAIL;
-		$returnVal['cause'] = "getScenarioEventsArray failed";
+		$returnVal['cause'] = scenarioLoadCause("the events list could not be read.");
 		echo json_encode($returnVal);
-		exit();		
+		exit();
 	}
-	
+
 	$scenarioMediaArray = scenarioXML::getScenarioMediaArray($fileName);
 	if($scenarioMediaArray === FALSE) {
 		$returnVal['status'] = AJAX_STATUS_FAIL;
-		$returnVal['cause'] = "getScenarioMediaArray failed";
+		$returnVal['cause'] = scenarioLoadCause("the media list could not be read.");
 		echo json_encode($returnVal);
 		exit();
 	}
@@ -99,7 +107,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 	$scenarioVocalsArray = scenarioXML::getScenarioVocalsArray($fileName);
 	if($scenarioVocalsArray === FALSE) {
 		$returnVal['status'] = AJAX_STATUS_FAIL;
-		$returnVal['cause'] = "getScenarioVocalsArray failed";
+		$returnVal['cause'] = scenarioLoadCause("the vocals list could not be read.");
 		echo json_encode($returnVal);
 		exit();
 	}
