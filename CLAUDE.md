@@ -221,9 +221,36 @@ so network delay becomes audio delay directly. Measured at 240 BPM:
 them in a burst, the controller collapses the burst into one sound, and you get
 several seconds of silence. No amount of buffering in software fixes that.
 
-### Controller firmware must be updated together with the PC software
+### Controller firmware update is recommended, not required
 
-The fix is split across both ends and neither half is sufficient alone:
+**v2.6.2 is fully backward compatible with existing controller firmware.** The
+wire protocol is unchanged — `pulse\n`, `pulseVPC\n`, `breath\n` and
+`statusPort:N` are exactly what every prior firmware version already parses. An
+un-upgraded controller connects and runs normally; nothing stops working.
+
+Several v2.6.2 changes in fact *help* older firmware:
+
+| Change | Effect on an un-upgraded controller |
+|--------|-------------------------------------|
+| Listening on port 50200 | Pre-2020 firmware can connect **at all** |
+| Draining controller sockets | Fixes the reconnect/dropped-beat bug for every firmware version |
+| 15 ms message spacing | Fewer messages discarded by the one-message-per-`read()` parser |
+| QPC / `timeBeginPeriod` | Removes the PC's own 15.6 ms jitter regardless of controller |
+
+What the controller update adds is the remaining half of the *timing* fix:
+
+- **PC side** contributed up to ±45 ms — fixed by v2.6.2 alone
+- **Controller side** contributes ±20–40 ms — needs the firmware update
+
+So a site on v2.6.2 with old controller firmware gets roughly half the
+improvement: noticeably better, but still occasionally audible at awkward rates
+such as 150 BPM. Updating the controller as well brings it to ~±2 ms.
+
+This matters for rollout: v2.6.2 can be shipped to everyone immediately without
+gating it on controller updates, which for ~150 units owned by other
+institutions would otherwise block the release indefinitely.
+
+The two halves of the timing fix are:
 
 - **PC** (pulse.cpp) — removes the 15.6 ms tick quantization
 - **Controller** (sim-ctl-master/wav-trig/soundSense.cpp) — removes polling-loop
@@ -336,11 +363,12 @@ from the mac section — make sure `WinVetSim.exe` exists there before packaging
 
 ## Current Version
 
-**v2.6.2** — heart beat timing fixes; requires matching controller firmware
+**v2.6.2** — heart beat timing fixes
 
-> **v2.6.2 needs the controller updated too.** The fix is split across both ends
-> and neither half is sufficient alone — see "Controller firmware must be updated
-> together with the PC software" under Gotchas, and
+> **Backward compatible with existing controller firmware.** No controller update
+> is needed to install or run v2.6.2 — the wire protocol is unchanged. Updating
+> the controller as well removes the remaining timing jitter; see "Controller
+> firmware update is recommended, not required" under Gotchas, and
 > `CONTROLLER_UPDATE_CHECKLIST.md`.
 
 ### Release history

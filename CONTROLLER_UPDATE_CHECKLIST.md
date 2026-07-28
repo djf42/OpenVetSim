@@ -2,10 +2,24 @@
 
 Applies to the July 2026 heart-beat timing fix (Change 11).
 
-**Both the PC software and the controller firmware must be updated.** The PC fix
-removes clock quantization at the sender; the controller fix removes polling-loop
-jitter at the player. Updating only one end leaves the fault audible, and it is
-subtle enough to be mistaken for "the fix didn't work."
+**This update is recommended, not required.** OpenVetSim v2.6.2 is fully backward
+compatible with existing controller firmware — the wire protocol is unchanged, so
+an un-upgraded controller connects and runs normally. You do not need to do this
+before installing v2.6.2, and you do not need to coordinate the two.
+
+What this update adds is the remaining half of the timing fix:
+
+| | Contribution to beat jitter | Fixed by |
+|---|---|---|
+| PC software | up to ±45 ms | v2.6.2 alone |
+| Controller firmware | ±20–40 ms | this procedure |
+
+So a site running v2.6.2 against old controller firmware is **noticeably better
+but not fixed** — the stumble is still occasionally audible at awkward rates such
+as 150 BPM. Doing both brings it to roughly ±2 ms.
+
+Worth prioritising for controllers used in rhythm-recognition teaching, where an
+irregular sinus rhythm is actively misleading. Lower priority elsewhere.
 
 Budget roughly 30–45 minutes per controller the first time.
 
