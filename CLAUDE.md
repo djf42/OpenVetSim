@@ -193,6 +193,37 @@ threads silently ran at normal priority on macOS/Linux despite asking for
 lacks privilege the call fails and pulse.cpp prints a warning — that warning
 means degraded timing, not a crash.
 
+### winvetsim.ini silently overrides the PHP bind address on upgrades
+
+`winvetsim.ini` lives in the HTML data directory (`C:\Users\Public\OpenVetSim\`
+on Windows), **not** the program directory, so no installer ever touches it. It
+is created once from whatever the compiled defaults were at the time, and from
+then on its values win over the defaults.
+
+The practical consequence: any installation first set up before
+`DEFAULT_PHP_SERVER_ADDRESS` changed to `0.0.0.0` still contains
+
+```ini
+[Server]
+serverAddress = 127.0.0.1
+```
+
+That pins PHP to loopback on every subsequent upgrade, which silently breaks
+sim-remote and remote access to the instructor interface. It is invisible from
+the machine itself — the Electron window connects over 127.0.0.1 and works
+perfectly; only phones, tablets and other computers are refused.
+
+To fix on an affected machine, edit the file (or delete it — it is recreated
+with current defaults) and restart:
+
+```ini
+serverAddress = 0.0.0.0
+```
+
+`startPHPServer()` now logs a warning when the bind address is loopback, so this
+is at least self-diagnosing rather than a silent failure. It is deliberately not
+corrected automatically, since an administrator may want loopback-only.
+
 ### Never build browser URLs from PHP's SERVER_NAME
 
 PHP runs as `php -S 0.0.0.0:8081` so phones can reach sim-remote, and the

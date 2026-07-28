@@ -247,6 +247,37 @@ startPHPServer(void)
 
 	sprintf_s(mbuf, sizeof(mbuf), "starting PHP: %s", commandLine);
 	log_message("", mbuf);
+
+	/*
+	 * Warn loudly if PHP is bound to loopback only.
+	 *
+	 * The compiled default is 0.0.0.0 so that phones, tablets and other
+	 * computers can reach the interface. But winvetsim.ini, in the HTML data
+	 * directory, overrides it -- and that file is created once from whatever
+	 * the default was at the time and then never updated by any installer.
+	 *
+	 * So an installation first set up before the default changed still carries
+	 * "serverAddress = 127.0.0.1", which silently defeats sim-remote and the
+	 * remote instructor interface on every subsequent upgrade. The failure is
+	 * invisible from the machine itself, because the Electron window connects
+	 * over 127.0.0.1 and works perfectly; only other devices are refused.
+	 *
+	 * Not corrected automatically: an administrator may deliberately want
+	 * loopback-only. But it must not be silent -- diagnosing this from the far
+	 * end costs hours, as it did once already.
+	 */
+	if (strcmp(PHP_SERVER_ADDR, "127.0.0.1") == 0 ||
+		strcmp(PHP_SERVER_ADDR, "localhost") == 0)
+	{
+		sprintf_s(mbuf, sizeof(mbuf),
+			"NOTE: PHP is bound to %s, so only this computer can reach the "
+			"interface. Phones, tablets and other computers will NOT connect. "
+			"To allow them, set  serverAddress = 0.0.0.0  in %s/winvetsim.ini "
+			"and restart. (This value is usually left over from an older "
+			"installation; the current default is 0.0.0.0.)",
+			PHP_SERVER_ADDR, localConfig.html_path);
+		log_message("", mbuf);
+	}
 #ifndef _WIN32
 	system(commandLine);
 #endif
