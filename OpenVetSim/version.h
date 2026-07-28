@@ -1,4 +1,5 @@
 #pragma once
 
 #define SIMMGR_VERSION_MAJ		2
-#define SIMMGR_VERSION_MIN		5
+#define SIMMGR_VERSION_MIN		6
+#define SIMMGR_VERSION_PATCH	2

@@ -79,8 +79,12 @@ getBuildDate(void)
 void
 setWVSVersion(void)
 {
-	sprintf_s(WVSversion, STR_SIZE, "%d.%d.%" PRId64,
-		SIMMGR_VERSION_MAJ, SIMMGR_VERSION_MIN, getBuildDate());
+	// getBuildDate() also logs the compiler build date/time, which is useful for
+	// identifying exactly which build a site is running; keep calling it for that
+	// even though the version string is now a fixed semantic version (M.m.p).
+	(void)getBuildDate();
+	sprintf_s(WVSversion, STR_SIZE, "%d.%d.%d",
+		SIMMGR_VERSION_MAJ, SIMMGR_VERSION_MIN, SIMMGR_VERSION_PATCH);
 }
 
 /*
