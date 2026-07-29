@@ -176,7 +176,14 @@ int
 startPHPServer(void)
 {
 	char commandLine[2048];
-	char mbuf[300];
+	// Must hold the longest message formatted into it below. That includes
+	// "starting PHP: <commandLine>" (commandLine is 2048) and the loopback
+	// NOTE (~330 bytes). The old size of 300 overflowed on the loopback NOTE,
+	// and sprintf_s aborts the process on overflow -- so on any machine whose
+	// winvetsim.ini pins serverAddress to 127.0.0.1 (the very case the NOTE
+	// warns about), the engine was killed right after logging "starting PHP",
+	// blanking the UI. Size generously to cover commandLine plus a prefix.
+	char mbuf[2300];
 	int  rval = -1;
 
 	if (isServerRunning() != 0)
