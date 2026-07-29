@@ -282,8 +282,14 @@ startPHPServer(void)
 	system(commandLine);
 #endif
 
-	// Poll until the server is up (up to 1 second in 10 ms steps)
-	for (int checkCount = 100; checkCount > 0; checkCount--)
+	// Poll until the server is up. The loop breaks the instant PHP answers, so
+	// a long ceiling costs nothing on a fast machine -- but it MUST be generous,
+	// because on some machines PHP takes several seconds to first respond (cold
+	// disk, and especially antivirus scanning php.exe on launch). The old 1 s
+	// ceiling timed out before PHP was ready on such machines, and the caller
+	// then treated that as fatal and exited, killing the whole simulator.
+	// Wait up to 30 seconds (3000 * 10 ms).
+	for (int checkCount = 3000; checkCount > 0; checkCount--)
 	{
 		sim_sleep_ms(10);
 		if (isServerRunning() != 0)

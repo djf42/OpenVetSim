@@ -223,10 +223,16 @@ int vetsim()
 
 	if (startPHPServer())
 	{
-		printf("Could not start PHP Server\n" );
-		sprintf_s(msg_buf, BUF_SIZE, "%s", "Could not start PHP Server");
+		// NON-FATAL. PHP has been launched; it simply hasn't answered the
+		// engine's health check within the window (e.g. antivirus scanning
+		// php.exe on a lab PC delays its first response). The engine must NOT
+		// exit here -- doing so kills the whole simulator and the Electron
+		// window goes blank (about:blank), even though PHP comes up moments
+		// later and the launcher verifies it independently before showing the
+		// UI. Log a warning and carry on.
+		printf("WARNING: PHP health check did not confirm; continuing (PHP was launched)\n");
+		sprintf_s(msg_buf, BUF_SIZE, "%s", "WARNING: PHP health check did not confirm in time; continuing (PHP was launched)");
 		log_message("", msg_buf);
-		exit(202);
 	}
 	else
 	{

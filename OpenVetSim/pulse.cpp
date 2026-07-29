@@ -736,8 +736,24 @@ pulseTask(void )
 	listenPorts[listenCount] = portno;
 	listenCount++;
 
-	// Legacy port — best effort, and skipped if it is already the primary.
-	if (portno != LEGACY_PORT_PULSE)
+	// Legacy port (50200) — DISABLED BY DEFAULT.
+	//
+	// Added in 2.6.2 so pre-2020 controllers that only scan port 50200 could
+	// connect. In practice it breaks controllers that scan BOTH ports: such a
+	// controller connects on the primary port 40844 (fine) and then also hits
+	// 50200; we refuse that duplicate by closing the socket, and the controller
+	// instantly reconnects, producing a tight connect/refuse storm (dozens per
+	// second) that spins this accept loop and floods log_message(), starving the
+	// engine. The visible result is a UI that loads but never receives live data
+	// -- avatar controls stuck in the top-left corner, flat ECG/ETCO2 waveforms,
+	// selecting a scenario does nothing -- and eventually an unresponsive engine.
+	//
+	// 2.6.1 never bound 50200 and worked correctly, so leaving it unbound simply
+	// restores that behavior: a 50200 probe is refused at the TCP layer and the
+	// controller connects on 40844 as normal. Enable this ONLY for a site that
+	// genuinely has pre-2020 controllers which cannot reach 40844 at all.
+	const bool enableLegacyPulsePort = false;
+	if (enableLegacyPulsePort && portno != LEGACY_PORT_PULSE)
 	{
 		SOCKET legacyFd = openListenSocket(LEGACY_PORT_PULSE, false);
 		if (legacyFd != INVALID_SOCKET)
