@@ -346,6 +346,35 @@ int getKeys()
 			localConfig.port_pulse = atoi((const char*)ini["Listeners"]["pulsePort"].c_str());
 		if (ini["Listeners"]["statusPort"].length() > 0)
 			localConfig.port_status = atoi((const char*)ini["Listeners"]["statusPort"].c_str());
+
+		// One-time migration of a loopback serverAddress to 0.0.0.0.
+		//
+		// Older installs created winvetsim.ini back when the compiled default was
+		// "127.0.0.1". That loopback value pins PHP to the local machine, which
+		// silently breaks sim-remote and remote instructor access -- and because
+		// this file lives in the user data directory, no installer or upgrade ever
+		// rewrites it, so the stale value persists across every upgrade.
+		//
+		// Migrate such a file to 0.0.0.0 exactly once, recording a marker so it is
+		// never done again. After migration an administrator who genuinely wants
+		// loopback-only can set serverAddress back to 127.0.0.1; because the marker
+		// is now present, that choice is respected on every future launch.
+		if (ini["Server"]["loopbackMigrated"].length() == 0)
+		{
+			if (strcmp(localConfig.php_server_addr, "127.0.0.1") == 0 ||
+				strcmp(localConfig.php_server_addr, "localhost")  == 0)
+			{
+				snprintf(localConfig.php_server_addr, sizeof(localConfig.php_server_addr),
+					"%s", DEFAULT_PHP_SERVER_ADDRESS);
+				ini["Server"]["serverAddress"] = DEFAULT_PHP_SERVER_ADDRESS;
+				printf("Migrated serverAddress from loopback to %s (one-time; set it "
+					"back in winvetsim.ini to keep loopback-only).\n",
+					DEFAULT_PHP_SERVER_ADDRESS);
+			}
+			ini["Server"]["loopbackMigrated"] = "1";
+			file.write(ini);   // persist the marker (and the new address, if changed)
+		}
+
 		printf("Data from INI: Server %s:%d, Pulse %d, Status %d\n",
 			localConfig.php_server_addr,
 			localConfig.php_server_port,
