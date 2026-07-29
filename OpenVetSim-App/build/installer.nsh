@@ -134,21 +134,15 @@
   ; Remove the desktop shortcut.
   Delete "$R0\Desktop\OpenVetSim Scenarios.lnk"
 
-  ; Ask before deleting user data.
+  ; User data (scenarios and session recordings) is intentionally LEFT IN PLACE
+  ; and never removed by the uninstaller.
   ;
-  ; MB_DEFBUTTON2 makes "No" (keep) the default button. Without it NSIS defaults
-  ; to "Yes", so anyone pressing Enter through the uninstaller silently deleted
-  ; every scenario and recorded session. Scenarios represent teaching
-  ; preparation that cannot be recovered, so the destructive option must never
-  ; be the one that happens by accident.
-  MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 \
-    "Also delete your simulation scenarios and session recordings?$\n$\nThis permanently removes everything in:$\n$R0\OpenVetSim\scenarios$\n$R0\OpenVetSim\simlogs$\n$\nChoose No to KEEP your scenarios and recordings (recommended). They will still be there if you reinstall OpenVetSim later." \
-    IDNO keepUserData
-
-    RMDir /r "$R0\OpenVetSim\scenarios"
-    RMDir /r "$R0\OpenVetSim\simlogs"
-    RMDir    "$R0\OpenVetSim"   ; removes dir only if now empty
-
-  keepUserData:
+  ; Why no prompt: on an upgrade, electron-builder runs this uninstaller
+  ; automatically before installing the new version, so a "delete your
+  ; scenarios?" dialog here appeared as a confusing SECOND scenario prompt on
+  ; top of the install-time backup dialog. Scenarios are teaching preparation
+  ; that cannot be reconstructed, so keeping them is always the right default.
+  ; Anyone who genuinely wants the data gone can delete
+  ; C:\Users\Public\OpenVetSim by hand.
 
 !macroend
