@@ -55,8 +55,9 @@ extern struct simmgr_shm shmSpace;
 #include <errno.h>
 
 #include <iostream>
-#include <vector>  
-#include <string>  
+#include <vector>
+#include <string>
+#include <thread>
 #include <cstdlib>
 #include <sstream>
 
@@ -944,7 +945,14 @@ pulseTask(void )
 						);
 						// Send the Status Port Number to the listener
 						sendStatusPort(i);
-						getControllerVersion(i);
+						// Fetch the controller's firmware version OFF the accept
+						// path. It's cosmetic and does a network round-trip to the
+						// controller, so it must never be able to stall or crash
+						// the pulse/accept loop -- run it detached. Combined with
+						// the WinHTTP timeouts in ReadWebPage(), a controller that
+						// doesn't serve the version page can no longer take the
+						// engine down (the 2.6.2 lab-computer white-screen).
+						std::thread(getControllerVersion, i).detach();
 
 						found = 1;
 					}
@@ -1494,6 +1502,14 @@ std::string ReadWebPage(const std::string& url)
 	HINTERNET hSession = WinHttpOpen(L"WinVetSim/1.0",
 		WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
 	if (!hSession) return "";
+
+	// Bound every phase so a controller that isn't serving HTTP on port 80
+	// cannot stall this call. Without explicit timeouts WinHTTP uses a ~60s
+	// connect default (and Windows' TCP SYN retry is ~21s), which froze the
+	// engine for ~20s whenever a controller was attached. Cap resolve/connect/
+	// send/receive at 2s each -- the version string is cosmetic, so failing
+	// fast is exactly what we want.
+	WinHttpSetTimeouts(hSession, 2000, 2000, 2000, 2000);
 
 	HINTERNET hConnect = WinHttpConnect(hSession, whost.c_str(),
 		INTERNET_DEFAULT_HTTP_PORT, 0);

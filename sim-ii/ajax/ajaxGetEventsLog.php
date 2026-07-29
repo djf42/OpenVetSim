@@ -48,7 +48,18 @@ along with this program. If not, see <http://www.gnu.org/licenses/>
 		exit();
 	}
 	
-	$logArray = array_reverse(file(SERVER_SIM_LOGS . $logFileName, FILE_IGNORE_NEW_LINES + FILE_SKIP_EMPTY_LINES));
+	// file() returns FALSE if the log can't be read at this instant -- on
+	// Windows this happens routinely because the engine holds the file open
+	// for writing. In PHP 8 array_reverse(FALSE) is a fatal TypeError (it was
+	// only a warning in PHP 7), which crashed this endpoint on every poll.
+	$logLines = file(SERVER_SIM_LOGS . $logFileName, FILE_IGNORE_NEW_LINES + FILE_SKIP_EMPTY_LINES);
+	if($logLines === FALSE) {
+		$returnVal['status'] = AJAX_STATUS_FAIL;
+		$returnVal['reason'] = "log file could not be read";
+		echo json_encode($returnVal);
+		exit();
+	}
+	$logArray = array_reverse($logLines);
 //FB::log($logArray);
 
 	if(count($logArray) == 0) {
