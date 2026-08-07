@@ -114,8 +114,10 @@
   scenariosDone:
 
   ; Create a shortcut on the All Users desktop so every account can find
-  ; the scenarios folder easily.
-  CreateShortCut "$R0\Desktop\OpenVetSim Scenarios.lnk" "$R0\OpenVetSim\scenarios"
+  ; the scenarios folder easily. The 4th/5th arguments set the shortcut's icon
+  ; to the application's icon (embedded in the installed OpenVetSim.exe) so it is
+  ; visually identifiable rather than a generic folder-shortcut icon.
+  CreateShortCut "$R0\Desktop\OpenVetSim Scenarios.lnk" "$R0\OpenVetSim\scenarios" "" "$INSTDIR\OpenVetSim.exe" 0
 
 !macroend
 

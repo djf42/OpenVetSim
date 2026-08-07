@@ -162,6 +162,27 @@ async function initUserData() {
         fs.symlinkSync(scenariosDest, desktopLink);
       } catch (symlinkErr) {
         console.warn('Could not create Desktop shortcut:', symlinkErr.message);
+        // Tell the user ONCE (a marker file prevents nagging on every launch)
+        // that the Desktop shortcut could not be created — usually because macOS
+        // has not granted Desktop access — and point them at the menu item that
+        // opens the folder directly. If Desktop access is later granted the
+        // symlink will succeed and this never fires.
+        const noticeFlag = path.join(userDir, '.desktopShortcutNotice');
+        if (!fs.existsSync(noticeFlag)) {
+          try {
+            dialog.showMessageBox(mainWin, {
+              type: 'info',
+              title: 'Desktop Shortcut Not Created',
+              message: 'OpenVetSim could not add the “OpenVetSim Scenarios” shortcut to your Desktop.',
+              detail: 'This usually means macOS has not granted OpenVetSim access to your '
+                    + 'Desktop folder. Your scenarios are safe either way.\n\n'
+                    + 'To open the scenarios folder at any time, choose '
+                    + '“Open Scenario Folder” from the Simulator menu.',
+              buttons: ['OK'],
+            });
+          } catch (dlgErr) { /* dialog is best-effort */ }
+          try { fs.writeFileSync(noticeFlag, String(Date.now())); } catch (e) { /* ignore */ }
+        }
       }
     }
   }
@@ -606,6 +627,22 @@ function buildMenu() {
       click: () => surveyController(mainWin, PORT_STATUS),
     },
     { type: 'separator' },
+    {
+      label: 'Open Scenario Folder',
+      click: async () => {
+        const scenariosDir = path.join(getHtmlPath(), 'scenarios');
+        const err = await shell.openPath(scenariosDir);   // '' on success
+        if (err) {
+          dialog.showMessageBox(mainWin, {
+            type: 'warning',
+            title: 'Could Not Open Scenario Folder',
+            message: 'Could not open the scenarios folder.',
+            detail: scenariosDir + '\n\n' + err,
+            buttons: ['OK'],
+          });
+        }
+      },
+    },
     {
       label: 'Copy Video Log Path',
       click: () => {
