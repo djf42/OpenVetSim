@@ -50,7 +50,7 @@ See gpl.html
 
 			var content = '<div style="text-align: center;"><img src="./images/k9logo.png" width="100px">';
 			content += '<h1>About OpenVetSim</h1></div><br/>';
-			content += 'Release 2.6.2<br/>';
+			content += 'Release 2.6.4<br/>';
 			content += controllerIP + '<br/>';
 			content += 'Controller Firmware Version:  ' + controls.controllers.fwVers + '<br/>';
 			content += '------------------------------------<br/>';
