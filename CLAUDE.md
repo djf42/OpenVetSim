@@ -394,10 +394,10 @@ from the mac section — make sure `WinVetSim.exe` exists there before packaging
 
 ## Current Version
 
-**v2.6.2** — heart beat timing fixes
+**v2.6.5** — ETCO₂ waveform scale
 
 > **Backward compatible with existing controller firmware.** No controller update
-> is needed to install or run v2.6.2 — the wire protocol is unchanged. Updating
+> is needed to install or run v2.6.5 — the wire protocol is unchanged. Updating
 > the controller as well removes the remaining timing jitter; see "Controller
 > firmware update is recommended, not required" under Gotchas, and
 > `CONTROLLER_UPDATE_CHECKLIST.md`.
@@ -432,6 +432,26 @@ from the mac section — make sure `WinVetSim.exe` exists there before packaging
   2.4 GHz produces multi-second dropouts. On macOS, `awdl0` (AirDrop/Handoff)
   periodically takes the radio off-channel and must be down for Wi-Fi to be
   usable: `sudo ifconfig awdl0 down`.
+- v2.6.3 – v2.6.4 — **stability and installer fixes.** Released together as
+  2.6.4. Engine crash on controller connect fixed and the event-log endpoint
+  hardened; a second crash fixed where the loopback-warning message overflowed
+  the mbuf; the engine is no longer killed when the PHP health check is merely
+  slow; a stale loopback `serverAddress` in `winvetsim.ini` is now self-healed
+  rather than only warned about; scenario load errors are reported instead of
+  failing silently; the Windows uninstaller no longer offers to delete user
+  scenarios; and users are pointed at the scenarios folder when the desktop
+  shortcut is missing.
+- v2.6.5 — **ETCO₂ waveform scale.** The capnograph strip now draws a reference
+  scale behind the trace: a solid 1 px zero baseline with dotted 1 px gridlines
+  at 25 and 50 mmHg, labelled in a left gutter. Line positions are derived from
+  the same constants that scale the waveform (`chart.respScale.fullScaleAmplitude`
+  against `controls.etCO2.maxValue`), so the gridlines stay true if either is
+  changed. Shown on both the instructor interface and the student vitals monitor,
+  gated on the same condition as the trace itself — always on for the instructor,
+  only with the CO₂ leads connected on the vitals monitor. Both strips'
+  `xOffsetLeft` widened 10 → 24 px to make room for the labels and keep the ECG
+  and capnograph traces starting at the same x. Display only; no engine or wire
+  protocol change.
 
 ---
 
