@@ -92,7 +92,9 @@ See gpl.html
 			activeWaveform: [],		// currently rendered waveform, resampled to fit current heart rate
 			yOffset: 0,				// yOffset of trace
 			yDisplayOffset: 5,		// display y offset
-			xOffsetLeft: 10,		// left xOffset of trace
+			xOffsetLeft: 24,		// left xOffset of trace - matches the resp strip so the
+									// two traces start at the same x (the resp strip needs
+									// the margin for the ETCO2 scale labels)
 			xOffsetRight: 0,		// right xOffset of trace
 			rhythmIndex: '',		// index of current rhythm being displayed
 			rateIndex: 0,			// index of pattern for current heart rate
@@ -131,7 +133,7 @@ See gpl.html
 			rhythm: new Array,		// array of digitized rhythms
 			yOffset: 0,				// yOffset of trace
 			yDisplayOffset: 5,		// display y offset
-			xOffsetLeft: 10,		// left xOffset of trace
+			xOffsetLeft: 24,		// left xOffset of trace - also the ETCO2 scale label gutter
 			xOffsetRight: 0,		// right xOffset of trace
 			rhythmIndex: 'low',		// index of current rhythm being displayed
 			length: 10,				// variable to hold length of pattern
@@ -162,9 +164,39 @@ See gpl.html
 			blankTimer: 0,			// timer to blank vitals ETCO2
 			rrBlankCount: 2,		// count of breath waveforms before displaying valid awRR
 			currentetCO2value: 0,		// variable to hold ETCO2 value at the start of a breath waveform
-			maxInhalationDuration: 0	// max duration ofr inhalation
+			maxInhalationDuration: 0,	// max duration ofr inhalation
+			scaleWasVisible: false		// ETCO2 scale visibility on the previous tick
 		},
-		
+
+		// ETCO2 reference scale drawn behind the respiration (capnograph) trace.
+		// The waveform is scaled so that an ETCO2 of controls.etCO2.maxValue draws a
+		// peak of fullScaleAmplitude pixels above the zero line (see drawRespPixel:
+		// y = pattern * etCO2.value / etCO2.maxValue, where the 'high' pattern peaks
+		// at 62). Reference lines therefore land at value * fullScaleAmplitude /
+		// etCO2.maxValue pixels above zero, so they stay correct if either changes.
+		//
+		// The strip is drawn one pixel column at a time and a cursor clears the
+		// column ahead, so the scale cannot simply be painted once — drawRespScale()
+		// repaints whatever part of it falls inside the cleared band on every tick.
+		respScale: {
+			enabled: true,
+			fullScaleAmplitude: 62,	// pixels of deflection at controls.etCO2.maxValue
+			zeroColor: '#6a6a6a',	// solid 1px baseline (waveform itself is 2px)
+			lineColor: '#4c4c4c',	// dotted 1px gridlines
+			labelColor: '#8c8c8c',
+			labelFont: '9px Verdana, sans-serif',
+			labelPad: 3,			// gap between the label and the start of the trace
+									// (the label gutter itself is chart.resp.xOffsetLeft)
+			dashLength: 2,			// dotted gridline: 2px on ...
+			dashPeriod: 6,			// ... every 6px
+			// value in mmHg, whether to print the number next to the line
+			lines: [
+				{ value: 0,  label: true },
+				{ value: 25, label: true },
+				{ value: 50, label: true }
+			]
+		},
+
 		cursorWidth: 10,			// width of cursor in pixels
 
 		// assume document is rendered before calling init.
@@ -806,6 +838,11 @@ See gpl.html
 			// get max displayed value
 			chart.getETC02MaxDisplay();
 
+			// paint the ETCO2 reference scale across the whole strip so it is there
+			// before the first sweep; after this it is maintained by drawRespPixel
+			chart.redrawRespScale();
+			chart.resp.scaleWasVisible = chart.respScaleVisible();
+
 			// beep indicator
 			if(chart.ekg.beepFlag == true){
 				$('#ekg-sound').html('Turn EKG Sound OFF!').removeClass('play').addClass('pause')
@@ -1219,8 +1256,131 @@ See gpl.html
 			chart[stripType].ctx.fillStyle="black";
 			chart[stripType].ctx.clearRect(chart[stripType].xPos, 0, chart.cursorWidth, chart[stripType].height );
 		},
-		
-		
+
+		// True when the capnograph is 'on' and the ETCO2 scale should be shown.
+		// Same gate the trace colour uses: always on the instructor interface,
+		// only with the CO2 leads connected on the student vitals monitor.
+		respScaleVisible: function() {
+			if( ! chart.respScale.enabled ) {
+				return false;
+			}
+			if( typeof profile === 'undefined' ) {
+				return true;			// called before the profile is loaded (init)
+			}
+			if( profile.isVitalsMonitor == false ) {
+				return true;
+			}
+			return ( typeof controls !== 'undefined' && controls.CO2 && controls.CO2.leadsConnected == true );
+		},
+
+		// y (canvas pixels) of an ETCO2 value in mmHg on the respiration strip.
+		respScaleY: function(value) {
+			var maxValue = ( typeof controls !== 'undefined' && controls.etCO2 && controls.etCO2.maxValue ) ? controls.etCO2.maxValue : 100;
+			var zeroY = chart.resp.yOffset + chart.resp.yDisplayOffset;
+			return Math.round( zeroY - ( value * chart.respScale.fullScaleAmplitude / maxValue ) );
+		},
+
+		// Repaint the reference lines across [xStart, xStart + width). Called with
+		// the cursor band each tick, so the lines survive the sweep that clears it.
+		drawRespScale: function(xStart, width) {
+			if( ! chart.respScaleVisible() ) {
+				return;
+			}
+			var ctx = chart.resp.ctx;
+			if( ! ctx ) {
+				return;
+			}
+			var cfg = chart.respScale;
+			var x0 = Math.max( chart.resp.xOffsetLeft, Math.floor( xStart ) );
+			var x1 = Math.min( chart.resp.width + 2, Math.ceil( xStart + width ) );
+			if( x1 <= x0 ) {
+				return;
+			}
+
+			var savedFill = ctx.fillStyle;
+
+			for( var i = 0; i < cfg.lines.length; i++ ) {
+				var y = chart.respScaleY( cfg.lines[i].value );
+				if( y < 0 || y >= chart.resp.height ) {
+					continue;			// off the strip at this scaling
+				}
+				if( cfg.lines[i].value == 0 ) {
+					// zero line: solid, 1px (the waveform itself is drawn 2px)
+					ctx.fillStyle = cfg.zeroColor;
+					ctx.fillRect( x0, y, x1 - x0, 1 );
+				} else {
+					// gridline: 1px dots on an absolute x grid so the dash phase
+					// stays continuous from one repainted band to the next
+					ctx.fillStyle = cfg.lineColor;
+					var dashStart = Math.floor( x0 / cfg.dashPeriod ) * cfg.dashPeriod;
+					for( var dx = dashStart; dx < x1; dx += cfg.dashPeriod ) {
+						var a = Math.max( dx, x0 );
+						var b = Math.min( dx + cfg.dashLength, x1 );
+						if( b > a ) {
+							ctx.fillRect( a, y, b - a, 1 );
+						}
+					}
+				}
+			}
+
+			ctx.fillStyle = savedFill;
+		},
+
+		// Paint the numeric labels in the left gutter. The gutter sits to the left of
+		// xOffsetLeft, which the sweep never clears, so the labels stay put and only
+		// need repainting when the strip wraps (the wrap blacks the gutter out).
+		drawRespScaleLabels: function() {
+			if( ! chart.respScaleVisible() ) {
+				return;
+			}
+			var ctx = chart.resp.ctx;
+			if( ! ctx ) {
+				return;
+			}
+			var cfg = chart.respScale;
+			var savedFill = ctx.fillStyle;
+			var savedFont = ctx.font;
+			var savedBaseline = ctx.textBaseline;
+			var savedAlign = ctx.textAlign;
+
+			ctx.font = cfg.labelFont;
+			ctx.textBaseline = 'middle';
+			ctx.textAlign = 'right';
+			ctx.fillStyle = cfg.labelColor;
+
+			for( var i = 0; i < cfg.lines.length; i++ ) {
+				if( ! cfg.lines[i].label ) {
+					continue;
+				}
+				var y = chart.respScaleY( cfg.lines[i].value );
+				if( y < 0 || y >= chart.resp.height ) {
+					continue;			// off the strip at this scaling
+				}
+				// keep the glyphs on the canvas when a line is near an edge
+				var textY = Math.min( Math.max( y, 6 ), chart.resp.height - 6 );
+				ctx.fillText( String( cfg.lines[i].value ), chart.resp.xOffsetLeft - cfg.labelPad, textY );
+			}
+
+			ctx.fillStyle = savedFill;
+			ctx.font = savedFont;
+			ctx.textBaseline = savedBaseline;
+			ctx.textAlign = savedAlign;
+		},
+
+		// Blank the label gutter (capnograph switched off on the vitals monitor).
+		clearRespScaleLabels: function() {
+			if( chart.resp.ctx ) {
+				chart.resp.ctx.clearRect( 0, 0, chart.resp.xOffsetLeft, chart.resp.height );
+			}
+		},
+
+		// Paint the whole scale at once — at init, and whenever the capnograph is
+		// switched back on, so the scale doesn't creep in a band at a time.
+		redrawRespScale: function() {
+			chart.drawRespScale( chart.resp.xOffsetLeft, chart.resp.width - chart.resp.xOffsetLeft + 1 );
+			chart.drawRespScaleLabels();
+		},
+
 		drawRespPixel: function() {
 			if(scenario.currentScenarioState == scenario.scenarioState.PAUSED && profile.isVitalsMonitor) {
 				return;
@@ -1228,10 +1388,27 @@ See gpl.html
 
 			var y;
 
+			// Handle the capnograph being switched on or off (CO2 leads connected on
+			// the vitals monitor). On: paint the whole scale now rather than letting
+			// it creep in a band at a time over the sweep. Off: blank the labels,
+			// which live outside the area the sweep clears.
+			var scaleVisible = chart.respScaleVisible();
+			if( scaleVisible != chart.resp.scaleWasVisible ) {
+				if( scaleVisible == true ) {
+					chart.redrawRespScale();
+				} else {
+					chart.clearRespScaleLabels();
+				}
+				chart.resp.scaleWasVisible = scaleVisible;
+			}
+
 			// Create the 'cursor' by clearing out a 10px wide section in front of the pixel
 			chart.drawCursor('resp');
-			
-			
+
+			// repaint the ETCO2 reference scale into the section just cleared, so it
+			// sits behind the trace instead of being wiped out by the sweep
+			chart.drawRespScale(chart.resp.xPos, chart.cursorWidth);
+
 			if(controls.manualRespiration.inProgress == true) {
 				if(controls.manualRespiration.manualBreathIndex >= chart.resp.manualBreathPattern.length) {
 					controls.manualRespiration.inProgress = false;
@@ -1500,8 +1677,10 @@ See gpl.html
 			if((chart.resp.xPos + chart.resp.xOffsetRight) > chart.resp.width) {
 				chart.resp.xPos = chart.resp.xOffsetLeft;
 				chart.resp.ctx.fillRect(0, 0, chart.resp.xOffsetLeft, chart.resp.height);
+				// the fill above blacks out the gutter the scale labels live in
+				chart.drawRespScaleLabels();
 			}
-			
+
 			// are we at the start of a new pattern?
 			// clear out bit and recalculate amplitude of ETCO2 waveform.
 			if( chart.resp.breathStart ) {
